@@ -6,10 +6,14 @@ from typing_extensions import TypeAlias
 
 import dagster._check as check
 from dagster._core.definitions import RunRequest
+from dagster._core.definitions.asset_condition import (
+    AssetConditionEvaluationWithRunIds,
+)
 from dagster._core.definitions.auto_materialize_rule_evaluation import (
-    AutoMaterializeAssetEvaluation,
+    deserialize_auto_materialize_asset_evaluation_to_asset_condition_evaluation_with_run_ids,
 )
 from dagster._core.definitions.events import AssetKey, AssetKeyPartitionKey
+from dagster._core.definitions.partition import PartitionsDefinition
 
 # re-export
 from dagster._core.definitions.run_request import (
@@ -17,9 +21,12 @@ from dagster._core.definitions.run_request import (
     SkipReason as SkipReason,
 )
 from dagster._core.definitions.selector import InstigatorSelector, RepositorySelector
+from dagster._core.definitions.sensor_definition import SensorType
 from dagster._core.host_representation.origin import ExternalInstigatorOrigin
 from dagster._serdes import create_snapshot_id
+from dagster._serdes.errors import DeserializationError
 from dagster._serdes.serdes import (
+    EnumSerializer,
     deserialize_value,
     whitelist_for_serdes,
 )
@@ -30,15 +37,28 @@ from dagster._utils.merger import merge_dicts
 InstigatorData: TypeAlias = Union["ScheduleInstigatorData", "SensorInstigatorData"]
 
 
-@whitelist_for_serdes(old_storage_names={"JobStatus"})
+class InstigatorStatusBackcompatSerializer(EnumSerializer):
+    def unpack(self, value: str):
+        if value == InstigatorStatus.AUTOMATICALLY_RUNNING.name:
+            value = InstigatorStatus.DECLARED_IN_CODE.name
+
+        return super().unpack(value)
+
+
+@whitelist_for_serdes(
+    serializer=InstigatorStatusBackcompatSerializer,
+    old_storage_names={"JobStatus"},
+)
 class InstigatorStatus(Enum):
-    # User has taken some action to start the run instigator
+    # User has taken some manual action to change the status of the run instigator
     RUNNING = "RUNNING"
-
-    # The run instigator is running, but only because of its default setting
-    AUTOMATICALLY_RUNNING = "AUTOMATICALLY_RUNNING"
-
     STOPPED = "STOPPED"
+
+    # The run instigator status is controlled by its default setting in code
+    DECLARED_IN_CODE = "DECLARED_IN_CODE"
+
+    # DEPRECATED: use InstigatorStatus.DECLARED_IN_CODE
+    AUTOMATICALLY_RUNNING = "AUTOMATICALLY_RUNNING"
 
 
 @whitelist_for_serdes
@@ -91,6 +111,7 @@ class SensorInstigatorData(
             ("last_tick_start_timestamp", Optional[float]),
             # the last time the sensor was started
             ("last_sensor_start_timestamp", Optional[float]),
+            ("sensor_type", Optional[SensorType]),
         ],
     )
 ):
@@ -102,6 +123,7 @@ class SensorInstigatorData(
         cursor: Optional[str] = None,
         last_tick_start_timestamp: Optional[float] = None,
         last_sensor_start_timestamp: Optional[float] = None,
+        sensor_type: Optional[SensorType] = None,
     ):
         return super(SensorInstigatorData, cls).__new__(
             cls,
@@ -111,6 +133,7 @@ class SensorInstigatorData(
             check.opt_str_param(cursor, "cursor"),
             check.opt_float_param(last_tick_start_timestamp, "last_tick_start_timestamp"),
             check.opt_float_param(last_sensor_start_timestamp, "last_sensor_start_timestamp"),
+            check.opt_inst_param(sensor_type, "sensor_type", SensorType),
         )
 
     def with_sensor_start_timestamp(self, start_timestamp: float) -> "SensorInstigatorData":
@@ -122,6 +145,7 @@ class SensorInstigatorData(
             self.cursor,
             self.last_tick_start_timestamp,
             start_timestamp,
+            self.sensor_type,
         )
 
 
@@ -706,19 +730,33 @@ def _validate_tick_args(
 
 class AutoMaterializeAssetEvaluationRecord(NamedTuple):
     id: int
-    evaluation: AutoMaterializeAssetEvaluation
+    serialized_evaluation_body: str
     evaluation_id: int
     timestamp: float
     asset_key: AssetKey
 
     @classmethod
-    def from_db_row(cls, row):
+    def from_db_row(cls, row) -> "AutoMaterializeAssetEvaluationRecord":
         return cls(
             id=row["id"],
-            evaluation=deserialize_value(
-                row["asset_evaluation_body"], AutoMaterializeAssetEvaluation
-            ),
+            serialized_evaluation_body=row["asset_evaluation_body"],
             evaluation_id=row["evaluation_id"],
             timestamp=datetime_as_float(row["create_timestamp"]),
-            asset_key=AssetKey.from_db_string(row["asset_key"]),
+            asset_key=check.not_none(AssetKey.from_db_string(row["asset_key"])),
         )
+
+    def get_evaluation_with_run_ids(
+        self, partitions_def: Optional[PartitionsDefinition]
+    ) -> AssetConditionEvaluationWithRunIds:
+        try:
+            # If this was serialized as an AssetConditionEvaluationWithRunIds, we can deserialize
+            # this directly
+            return deserialize_value(
+                self.serialized_evaluation_body, AssetConditionEvaluationWithRunIds
+            )
+        except DeserializationError:
+            # If this is a legacy AutoMaterializeAssetEvaluation, we need to pass in the partitions
+            # definition in order to be able to deserialize the evaluation properly
+            return deserialize_auto_materialize_asset_evaluation_to_asset_condition_evaluation_with_run_ids(
+                self.serialized_evaluation_body, partitions_def
+            )

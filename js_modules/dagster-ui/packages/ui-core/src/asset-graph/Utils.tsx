@@ -1,9 +1,11 @@
-import {pathHorizontalDiagonal, pathVerticalDiagonal} from '@vx/shape';
+import {pathHorizontalDiagonal} from '@vx/shape';
 import memoize from 'lodash/memoize';
 
-import {featureEnabled, FeatureFlag} from '../app/Flags';
+import {AssetNodeKeyFragment} from './types/AssetNode.types';
+import {AssetNodeForGraphQueryFragment} from './types/useAssetGraphData.types';
 import {COMMON_COLLATOR} from '../app/Util';
 import {
+  AssetCheckLiveFragment,
   AssetGraphLiveQuery,
   AssetLatestInfoFragment,
   AssetLatestInfoRunFragment,
@@ -11,12 +13,8 @@ import {
   AssetNodeLiveFreshnessInfoFragment,
   AssetNodeLiveMaterializationFragment,
   AssetNodeLiveObservationFragment,
-  AssetCheckLiveFragment,
 } from '../asset-data/types/AssetLiveDataProvider.types';
 import {RunStatus, StaleStatus} from '../graphql/types';
-
-import {AssetNodeKeyFragment} from './types/AssetNode.types';
-import {AssetNodeForGraphQueryFragment} from './types/useAssetGraphData.types';
 
 type AssetNode = AssetNodeForGraphQueryFragment;
 type AssetKey = AssetNodeKeyFragment;
@@ -123,19 +121,12 @@ export const graphHasCycles = (graphData: GraphData) => {
   return hasCycles;
 };
 
-export const buildSVGPath = featureEnabled(FeatureFlag.flagDAGSidebar)
-  ? pathHorizontalDiagonal({
-      source: (s: any) => s.source,
-      target: (s: any) => s.target,
-      x: (s: any) => s.x,
-      y: (s: any) => s.y,
-    })
-  : pathVerticalDiagonal({
-      source: (s: any) => s.source,
-      target: (s: any) => s.target,
-      x: (s: any) => s.x,
-      y: (s: any) => s.y,
-    });
+export const buildSVGPath = pathHorizontalDiagonal({
+  source: (s: any) => s.source,
+  target: (s: any) => s.target,
+  x: (s: any) => s.x,
+  y: (s: any) => s.y,
+});
 
 export interface LiveDataForNode {
   stepKey: string;

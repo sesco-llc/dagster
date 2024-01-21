@@ -1,8 +1,35 @@
 import {gql, useQuery} from '@apollo/client';
-import {Alert, Box, NonIdealState, Spinner, Tag, ErrorBoundary} from '@dagster-io/ui-components';
-import * as React from 'react';
+import {Alert, Box, ErrorBoundary, NonIdealState, Spinner, Tag} from '@dagster-io/ui-components';
+import {useContext, useEffect, useMemo} from 'react';
 import {Link, useLocation} from 'react-router-dom';
 
+import {AssetEvents} from './AssetEvents';
+import {AssetFeatureContext} from './AssetFeatureContext';
+import {ASSET_NODE_DEFINITION_FRAGMENT, AssetNodeDefinition} from './AssetNodeDefinition';
+import {ASSET_NODE_INSTIGATORS_FRAGMENT, AssetNodeInstigatorTag} from './AssetNodeInstigatorTag';
+import {AssetNodeLineage} from './AssetNodeLineage';
+import {AssetPageHeader} from './AssetPageHeader';
+import {AssetPartitions} from './AssetPartitions';
+import {AssetPlots} from './AssetPlots';
+import {AssetTabs} from './AssetTabs';
+import {AssetAutomaterializePolicyPage} from './AutoMaterializePolicyPage/AssetAutomaterializePolicyPage';
+import {AssetAutomaterializePolicyPageOld} from './AutoMaterializePolicyPageOld/AssetAutomaterializePolicyPage';
+import {AutomaterializeDaemonStatusTag} from './AutomaterializeDaemonStatusTag';
+import {useAutomationPolicySensorFlag} from './AutomationPolicySensorFlag';
+import {LaunchAssetExecutionButton} from './LaunchAssetExecutionButton';
+import {LaunchAssetObservationButton} from './LaunchAssetObservationButton';
+import {OverdueTag} from './OverdueTag';
+import {UNDERLYING_OPS_ASSET_NODE_FRAGMENT} from './UnderlyingOpsOrGraph';
+import {AssetChecks} from './asset-checks/AssetChecks';
+import {AssetKey, AssetViewParams} from './types';
+import {
+  AssetViewDefinitionNodeFragment,
+  AssetViewDefinitionQuery,
+  AssetViewDefinitionQueryVariables,
+} from './types/AssetView.types';
+import {healthRefreshHintFromLiveData} from './usePartitionHealthData';
+import {useReportEventsModal} from './useReportEventsModal';
+import {useFeatureFlags} from '../app/Flags';
 import {Timestamp} from '../app/time/Timestamp';
 import {AssetLiveDataRefresh, useAssetLiveData} from '../asset-data/AssetLiveDataProvider';
 import {
@@ -17,49 +44,23 @@ import {StaleReasonsTags} from '../assets/Stale';
 import {AssetComputeKindTag} from '../graph/OpTags';
 import {useQueryPersistedState} from '../hooks/useQueryPersistedState';
 import {RepositoryLink} from '../nav/RepositoryLink';
+import {useStartTrace} from '../performance';
 import {buildRepoAddress} from '../workspace/buildRepoAddress';
 import {workspacePathFromAddress} from '../workspace/workspacePath';
 
-import {AssetEvents} from './AssetEvents';
-import {AssetFeatureContext} from './AssetFeatureContext';
-import {AssetNodeDefinition, ASSET_NODE_DEFINITION_FRAGMENT} from './AssetNodeDefinition';
-import {AssetNodeInstigatorTag, ASSET_NODE_INSTIGATORS_FRAGMENT} from './AssetNodeInstigatorTag';
-import {AssetNodeLineage} from './AssetNodeLineage';
-import {AssetPageHeader} from './AssetPageHeader';
-import {AssetPartitions} from './AssetPartitions';
-import {AssetPlots} from './AssetPlots';
-import {AssetTabs} from './AssetTabs';
-import {AssetAutomaterializePolicyPage} from './AutoMaterializePolicyPage/AssetAutomaterializePolicyPage';
-import {AutomaterializeDaemonStatusTag} from './AutomaterializeDaemonStatusTag';
-import {LaunchAssetExecutionButton} from './LaunchAssetExecutionButton';
-import {LaunchAssetObservationButton} from './LaunchAssetObservationButton';
-import {OverdueTag} from './OverdueTag';
-import {UNDERLYING_OPS_ASSET_NODE_FRAGMENT} from './UnderlyingOpsOrGraph';
-import {AssetChecks} from './asset-checks/AssetChecks';
-import {AssetKey, AssetViewParams} from './types';
-import {
-  AssetViewDefinitionQuery,
-  AssetViewDefinitionQueryVariables,
-  AssetViewDefinitionNodeFragment,
-} from './types/AssetView.types';
-import {healthRefreshHintFromLiveData} from './usePartitionHealthData';
-import {useReportEventsModal} from './useReportEventsModal';
-
 interface Props {
   assetKey: AssetKey;
+  trace?: ReturnType<typeof useStartTrace>;
 }
 
-export const AssetView = ({assetKey}: Props) => {
+export const AssetView = ({assetKey, trace}: Props) => {
   const [params, setParams] = useQueryPersistedState<AssetViewParams>({});
-  const {tabBuilder, renderFeatureView} = React.useContext(AssetFeatureContext);
+  const {tabBuilder, renderFeatureView} = useContext(AssetFeatureContext);
 
   // Load the asset definition
   const {definition, definitionQueryResult, lastMaterialization} =
     useAssetViewAssetDefinition(assetKey);
-  const tabList = React.useMemo(
-    () => tabBuilder({definition, params}),
-    [definition, params, tabBuilder],
-  );
+  const tabList = useMemo(() => tabBuilder({definition, params}), [definition, params, tabBuilder]);
 
   const defaultTab = tabList.some((t) => t.id === 'partitions') ? 'partitions' : 'events';
   const selectedTab = params.view || defaultTab;
@@ -88,6 +89,12 @@ export const AssetView = ({assetKey}: Props) => {
   const dataRefreshHint = liveData
     ? healthRefreshHintFromLiveData(liveData)
     : lastMaterialization?.timestamp;
+
+  useEffect(() => {
+    if (!definitionQueryResult.loading && liveData) {
+      trace?.endTrace();
+    }
+  }, [definitionQueryResult, liveData, trace]);
 
   const renderDefinitionTab = () => {
     if (definitionQueryResult.loading && !definitionQueryResult.previousData) {
@@ -173,12 +180,17 @@ export const AssetView = ({assetKey}: Props) => {
     );
   };
 
+  const {flagUseNewAutomationPage} = useFeatureFlags();
+
   const renderAutomaterializeHistoryTab = () => {
     if (definitionQueryResult.loading && !definitionQueryResult.previousData) {
       return <AssetLoadingDefinitionState />;
     }
+    if (flagUseNewAutomationPage) {
+      return <AssetAutomaterializePolicyPage assetKey={assetKey} definition={definition} />;
+    }
     return (
-      <AssetAutomaterializePolicyPage
+      <AssetAutomaterializePolicyPageOld
         assetKey={assetKey}
         assetHasDefinedPartitions={!!definition?.partitionDefinition}
       />
@@ -209,7 +221,7 @@ export const AssetView = ({assetKey}: Props) => {
         return renderEventsTab();
       case 'plots':
         return renderPlotsTab();
-      case 'auto-materialize-history':
+      case 'automation':
         return renderAutomaterializeHistoryTab();
       case 'checks':
         return renderChecksTab();
@@ -265,6 +277,7 @@ export const AssetView = ({assetKey}: Props) => {
             ) : definition && definition.jobNames.length > 0 && upstream ? (
               <LaunchAssetExecutionButton
                 scope={{all: [definition]}}
+                showChangedAndMissingOption={false}
                 additionalDropdownOptions={reportEvents.dropdownOptions}
               />
             ) : undefined}
@@ -337,7 +350,7 @@ function getQueryForVisibleAssets(assetKey: AssetKey, params: AssetViewParams) {
 function useNeighborsFromGraph(graphData: GraphData | null, assetKey: AssetKey) {
   const graphId = toGraphId(assetKey);
 
-  return React.useMemo(() => {
+  return useMemo(() => {
     if (!graphData) {
       return {upstream: null, downstream: null};
     }
@@ -461,6 +474,7 @@ const AssetViewPageHeaderTags = ({
   liveData?: LiveDataForNode;
   onShowUpstream: () => void;
 }) => {
+  const automaterializeSensorsFlagState = useAutomationPolicySensorFlag();
   const repoAddress = definition
     ? buildRepoAddress(definition.repository.name, definition.repository.location.name)
     : null;
@@ -484,7 +498,9 @@ const AssetViewPageHeaderTags = ({
           </Link>
         </Tag>
       )}
-      {definition && definition.autoMaterializePolicy && <AutomaterializeDaemonStatusTag />}
+      {automaterializeSensorsFlagState === 'has-global-amp' && definition?.autoMaterializePolicy ? (
+        <AutomaterializeDaemonStatusTag />
+      ) : null}
       {definition && definition.freshnessPolicy && (
         <OverdueTag policy={definition.freshnessPolicy} assetKey={definition.assetKey} />
       )}

@@ -1,19 +1,6 @@
-import {
-  Box,
-  FontFamily,
-  Icon,
-  IconWrapper,
-  Slider,
-  colorBackgroundDefault,
-  colorBackgroundLight,
-  colorBorderDefault,
-  colorLineageDots,
-  CoreColors,
-} from '@dagster-io/ui-components';
+import {Box, Colors, Icon, Slider, Tooltip} from '@dagster-io/ui-components';
 import animate from 'amator';
 import * as React from 'react';
-import ReactDOM from 'react-dom';
-import {MemoryRouter} from 'react-router-dom';
 import styled from 'styled-components';
 
 import {IBounds} from './common';
@@ -52,6 +39,7 @@ interface SVGViewportState {
   scale: number;
   minScale: number;
   isClickHeld: boolean;
+  isExporting: boolean;
 }
 
 interface Point {
@@ -187,29 +175,31 @@ const PanAndZoomInteractor: SVGViewportInteractor = {
           e.stopPropagation();
         }}
       >
-        <WheelInstructionTooltip />
         <Box flex={{direction: 'column', alignItems: 'center'}}>
-          <IconButton
-            onClick={() => {
-              const x = viewport.element.current!.clientWidth / 2;
-              const y = viewport.element.current!.clientHeight / 2;
-              const scale = Math.min(
-                viewport.getMaxZoom(),
-                viewport.state.scale + BUTTON_INCREMENT,
-              );
-              const adjusted = Math.round((scale + Number.EPSILON) * 100) / 100;
-              viewport.adjustZoomRelativeToScreenPoint(adjusted, {x, y});
-            }}
-          >
-            <Icon size={24} name="zoom_in" />
-          </IconButton>
+          <Tooltip content="Zoom in">
+            <IconButton
+              style={{borderBottomLeftRadius: 0, borderBottomRightRadius: 0}}
+              onClick={() => {
+                const x = viewport.element.current!.clientWidth / 2;
+                const y = viewport.element.current!.clientHeight / 2;
+                const scale = Math.min(
+                  viewport.getMaxZoom(),
+                  viewport.state.scale + BUTTON_INCREMENT,
+                );
+                const adjusted = Math.round((scale + Number.EPSILON) * 100) / 100;
+                viewport.adjustZoomRelativeToScreenPoint(adjusted, {x, y});
+              }}
+            >
+              <Icon size={24} name="zoom_in" />
+            </IconButton>
+          </Tooltip>
           <Box
-            style={{width: 32}}
+            style={{width: 32, height: 140}}
             padding={{vertical: 12}}
-            background={colorBackgroundDefault()}
+            background={Colors.backgroundDefault()}
             data-zoom-control={true}
             flex={{alignItems: 'center', direction: 'column'}}
-            border={{side: 'left-and-right', color: colorBorderDefault()}}
+            border={{side: 'left-and-right', color: Colors.borderDefault()}}
           >
             <Slider
               vertical
@@ -225,26 +215,31 @@ const PanAndZoomInteractor: SVGViewportInteractor = {
               }}
             />
           </Box>
-          <IconButton
-            onClick={() => {
-              const x = viewport.element.current!.clientWidth / 2;
-              const y = viewport.element.current!.clientHeight / 2;
-              const scale = Math.max(
-                viewport.getMinZoom(),
-                viewport.state.scale - BUTTON_INCREMENT,
-              );
-              viewport.adjustZoomRelativeToScreenPoint(scale, {x, y});
-            }}
-          >
-            <Icon size={24} name="zoom_out" />
-          </IconButton>
+          <Tooltip content="Zoom out">
+            <IconButton
+              style={{borderTopLeftRadius: 0, borderTopRightRadius: 0}}
+              onClick={() => {
+                const x = viewport.element.current!.clientWidth / 2;
+                const y = viewport.element.current!.clientHeight / 2;
+                const scale = Math.max(
+                  viewport.getMinZoom(),
+                  viewport.state.scale - BUTTON_INCREMENT,
+                );
+                viewport.adjustZoomRelativeToScreenPoint(scale, {x, y});
+              }}
+            >
+              <Icon size={24} name="zoom_out" />
+            </IconButton>
+          </Tooltip>
         </Box>
         <Box flex={{direction: 'column', alignItems: 'center', gap: 8}} margin={{top: 8}}>
           {viewport.props.additionalToolbarElements}
           <Box>
-            <IconButton onClick={() => viewport.onExportToSVG()}>
-              <Icon size={24} name="download_for_offline" />
-            </IconButton>
+            <Tooltip content="Download as SVG">
+              <IconButton onClick={() => viewport.onExportToSVG()}>
+                <Icon size={24} name="download_for_offline" />
+              </IconButton>
+            </Tooltip>
           </Box>
         </Box>
       </ZoomSliderContainer>
@@ -253,29 +248,24 @@ const PanAndZoomInteractor: SVGViewportInteractor = {
 };
 
 const IconButton = styled.button`
-  background: ${colorBackgroundDefault()};
-  border: 1px solid ${colorBorderDefault()};
+  background: ${Colors.backgroundDefault()};
+  border: 1px solid ${Colors.borderDefault()};
   cursor: pointer;
   padding: 3px;
   position: relative;
+  border-radius: 8px;
+  transition: background 200ms ease-in-out;
+}
+  :hover {
+    background-color: ${Colors.backgroundLightHover()};
+  }
 
   :focus {
     outline: none;
   }
 
-  ${IconWrapper} {
-    transition: background 100ms;
-  }
-  &:first-child {
-    border-top-left-radius: 8px;
-    border-top-right-radius: 8px;
-  }
-  &:last-child {
-    border-bottom-left-radius: 8px;
-    border-bottom-right-radius: 8px;
-  }
   :active {
-    background-color: ${colorBackgroundLight()};
+    background-color: ${Colors.backgroundLight()};
   }
 `;
 
@@ -318,6 +308,7 @@ export class SVGViewport extends React.Component<SVGViewportProps, SVGViewportSt
     scale: DETAIL_ZOOM,
     minScale: 0,
     isClickHeld: false,
+    isExporting: false,
   };
 
   resizeObserver: any | undefined;
@@ -573,40 +564,12 @@ export class SVGViewport extends React.Component<SVGViewportProps, SVGViewportSt
   };
 
   onExportToSVG = async () => {
-    const unclippedViewport = {
-      top: 0,
-      left: 0,
-      right: this.props.graphWidth,
-      bottom: this.props.graphHeight,
-    };
-
-    const div = document.createElement('div');
-    document.getElementById('root')!.appendChild(div);
-
-    // TODO fix this!
-    // eslint-disable-next-line
-    ReactDOM.render(
-      <MemoryRouter>{this.props.children(this.state, unclippedViewport)}</MemoryRouter>,
-      div,
-    );
-    const svg = div.querySelector('svg') as SVGElement;
-    await makeSVGPortable(svg);
-
-    const text = new XMLSerializer().serializeToString(svg);
-    const blob = new Blob([text], {type: 'image/svg+xml'});
-    const a = document.createElement('a');
-    a.setAttribute(
-      'download',
-      `${document.title.replace(/[: \/]/g, '_').replace(/__+/g, '_')}.svg`,
-    );
-    a.setAttribute('href', URL.createObjectURL(blob));
-    a.click();
-    div.remove();
+    this.setState({isExporting: true});
   };
 
   render() {
     const {children, onClick, interactor} = this.props;
-    const {x, y, scale, isClickHeld} = this.state;
+    const {x, y, scale, isClickHeld, isExporting} = this.state;
     const dotsize = Math.max(7, 22 * scale);
 
     return (
@@ -631,7 +594,23 @@ export class SVGViewport extends React.Component<SVGViewportProps, SVGViewportSt
             transform: `matrix(${scale}, 0, 0, ${scale}, ${x}, ${y})`,
           }}
         >
-          {children(this.state, this.getViewport())}
+          {children(
+            this.state,
+            isExporting
+              ? {
+                  top: 0,
+                  left: 0,
+                  right: this.props.graphWidth,
+                  bottom: this.props.graphHeight,
+                }
+              : this.getViewport(),
+          )}
+          {isExporting ? (
+            <SVGExporter
+              element={this.element}
+              onDone={() => this.setState({isExporting: false})}
+            />
+          ) : undefined}
         </div>
         {interactor.render && interactor.render(this)}
       </div>
@@ -650,7 +629,7 @@ const SVGViewportStyles: React.CSSProperties = {
   overflow: 'hidden',
   userSelect: 'none',
   outline: 'none',
-  background: `url("data:image/svg+xml;utf8,<svg width='30px' height='30px' viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'><circle fill='${colorLineageDots()}' cx='5' cy='5' r='5' /></svg>") repeat`,
+  background: `url("data:image/svg+xml;utf8,<svg width='30px' height='30px' viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'><circle fill='${Colors.lineageDots()}' cx='5' cy='5' r='5' /></svg>") repeat`,
 };
 
 const ZoomSliderContainer = styled.div`
@@ -658,58 +637,48 @@ const ZoomSliderContainer = styled.div`
   bottom: 12px;
   right: 12px;
   width: 30px;
-  background: ${colorBackgroundLight()};
+  background: ${Colors.backgroundLight()};
 `;
 
-const WheelInstructionTooltip = () => {
-  const [usedMeta, setUsedMeta] = React.useState(false);
-  const [wheeling, setWheeling] = React.useState(false);
-  const timeout = React.useRef<NodeJS.Timeout>();
-
-  React.useEffect(() => {
-    const listener = (e: WheelEvent) => {
-      clearTimeout(timeout.current);
-
-      // Once the user tries any modifier keys while zooming, we set usedMeta to dismiss
-      // the instructions and avoid showing them again. (they know what they're doing)
-      if (e.metaKey || e.shiftKey || e.ctrlKey) {
-        setUsedMeta(true);
-        setWheeling(false);
+const SVGExporter = ({
+  element,
+  onDone,
+}: {
+  element: React.RefObject<HTMLDivElement>;
+  onDone: () => void;
+}) => {
+  React.useLayoutEffect(() => {
+    const ready = async () => {
+      // Find the rendered SVG node
+      const svgOriginal = element.current?.querySelector('svg') as SVGElement;
+      if (!svgOriginal) {
+        onDone();
         return;
       }
-      setWheeling(true);
-      timeout.current = setTimeout(() => {
-        setWheeling(false);
-      }, 2000);
+
+      // Copy the node rendered by React, attach it and inline all the styles
+      // (this mutates the DOM so it must be a copy of the element!)
+      const svg = svgOriginal.cloneNode(true) as SVGElement;
+      svgOriginal.parentElement?.appendChild(svg);
+      await makeSVGPortable(svg);
+      const text = new XMLSerializer().serializeToString(svg);
+      svg.remove();
+
+      // Trigger a file download
+      const blob = new Blob([text], {type: 'image/svg+xml'});
+      const a = document.createElement('a');
+      a.setAttribute(
+        'download',
+        `${document.title.replace(/[: \/]/g, '_').replace(/__+/g, '_')}.svg`,
+      );
+      a.setAttribute('href', URL.createObjectURL(blob));
+      a.click();
+
+      onDone();
     };
-    document.addEventListener('wheel', listener);
-    return () => {
-      document.removeEventListener('wheel', listener);
-      clearTimeout(timeout.current);
-    };
+    void ready();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const zoomKey = navigator.userAgent.includes('Mac') ? '⌘' : 'Ctrl';
-  const visible = wheeling && !usedMeta;
-
-  return (
-    <WheelInstructionTooltipContainer style={{opacity: visible ? 1 : 0}}>
-      {`Hold ${zoomKey} to zoom`}
-    </WheelInstructionTooltipContainer>
-  );
+  return <> </>;
 };
-
-const WheelInstructionTooltipContainer = styled.div`
-  position: absolute;
-  bottom: 42px;
-  right: 40px;
-  white-space: nowrap;
-  transition: opacity 300ms ease-in-out;
-  font-family: ${FontFamily.default};
-  font-size: 12px;
-  line-height: 16px;
-  border-radius: 2px;
-  background: ${CoreColors.Gray900};
-  color: ${CoreColors.Gray50};
-  padding: 8px 16px;
-`;

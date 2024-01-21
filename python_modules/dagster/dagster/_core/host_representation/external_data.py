@@ -56,6 +56,9 @@ from dagster._core.definitions.asset_spec import (
 from dagster._core.definitions.assets import AssetsDefinition
 from dagster._core.definitions.assets_job import is_base_asset_job_name
 from dagster._core.definitions.auto_materialize_policy import AutoMaterializePolicy
+from dagster._core.definitions.automation_policy_sensor_definition import (
+    AutomationPolicySensorDefinition,
+)
 from dagster._core.definitions.backfill_policy import BackfillPolicy
 from dagster._core.definitions.definition_config_schema import ConfiguredDefinitionConfigSchema
 from dagster._core.definitions.dependency import (
@@ -96,6 +99,7 @@ from dagster._core.snap import JobSnapshot
 from dagster._core.snap.mode import ResourceDefSnap, build_resource_def_snap
 from dagster._core.storage.io_manager import IOManagerDefinition
 from dagster._serdes import whitelist_for_serdes
+from dagster._serdes.serdes import is_whitelisted_for_serdes_object
 from dagster._utils.error import SerializableErrorInfo
 
 if TYPE_CHECKING:
@@ -225,7 +229,15 @@ class ExternalRepositoryData(
 
         check.failed("Could not find external schedule data named " + name)
 
-    def get_external_partition_set_data(self, name):
+    def has_external_partition_set_data(self, name) -> bool:
+        check.str_param(name, "name")
+        for external_partition_set_data in self.external_partition_set_datas:
+            if external_partition_set_data.name == name:
+                return True
+
+        return False
+
+    def get_external_partition_set_data(self, name) -> "ExternalPartitionSetData":
         check.str_param(name, "name")
 
         for external_partition_set_data in self.external_partition_set_datas:
@@ -523,6 +535,7 @@ class ExternalSensorData(
             ("default_status", Optional[DefaultSensorStatus]),
             ("sensor_type", Optional[SensorType]),
             ("asset_selection", Optional[AssetSelection]),
+            ("run_tags", Mapping[str, str]),
         ],
     )
 ):
@@ -539,6 +552,7 @@ class ExternalSensorData(
         default_status: Optional[DefaultSensorStatus] = None,
         sensor_type: Optional[SensorType] = None,
         asset_selection: Optional[AssetSelection] = None,
+        run_tags: Optional[Mapping[str, str]] = None,
     ):
         if job_name and not target_dict:
             # handle the legacy case where the ExternalSensorData was constructed from an earlier
@@ -552,6 +566,13 @@ class ExternalSensorData(
                     ),
                 )
             }
+
+        if asset_selection is not None:
+            check.opt_inst_param(asset_selection, "asset_selection", AssetSelection)
+            check.invariant(
+                is_whitelisted_for_serdes_object(asset_selection),
+                "asset_selection must be serializable",
+            )
 
         return super(ExternalSensorData, cls).__new__(
             cls,
@@ -567,6 +588,7 @@ class ExternalSensorData(
                 target_dict, "target_dict", str, ExternalTargetData
             ),
             metadata=check.opt_inst_param(metadata, "metadata", ExternalSensorMetadata),
+            # Leave default_status as None if it's STOPPED to maintain stable back-compat IDs
             default_status=(
                 DefaultSensorStatus.RUNNING
                 if default_status == DefaultSensorStatus.RUNNING
@@ -574,6 +596,7 @@ class ExternalSensorData(
             ),
             sensor_type=sensor_type,
             asset_selection=asset_selection,
+            run_tags=run_tags or {},
         )
 
 
@@ -2036,6 +2059,10 @@ def external_sensor_data_from_def(
             )
             for base_asset_job_name in repository_def.get_implicit_asset_job_names()
         }
+
+        serializable_asset_selection = sensor_def.asset_selection.to_serializable_asset_selection(
+            repository_def.asset_graph
+        )
     else:
         target_dict = {
             target.job_name: ExternalTargetData(
@@ -2045,6 +2072,8 @@ def external_sensor_data_from_def(
             )
             for target in sensor_def.targets
         }
+
+        serializable_asset_selection = None
 
     return ExternalSensorData(
         name=sensor_def.name,
@@ -2057,7 +2086,12 @@ def external_sensor_data_from_def(
         metadata=ExternalSensorMetadata(asset_keys=asset_keys),
         default_status=sensor_def.default_status,
         sensor_type=sensor_def.sensor_type,
-        asset_selection=sensor_def.asset_selection,
+        asset_selection=serializable_asset_selection,
+        run_tags=(
+            sensor_def.run_tags
+            if isinstance(sensor_def, AutomationPolicySensorDefinition)
+            else None
+        ),
     )
 
 

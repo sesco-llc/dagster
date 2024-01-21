@@ -1,8 +1,19 @@
 import {gql, useQuery} from '@apollo/client';
 import {Box, FontFamily, Heading, NonIdealState, PageHeader, Tag} from '@dagster-io/ui-components';
-import * as React from 'react';
+import {useLayoutEffect, useMemo} from 'react';
 import {useParams} from 'react-router-dom';
 
+import {AssetCheckTagCollection, AssetKeyTagCollection} from './AssetTagCollections';
+import {Run} from './Run';
+import {RUN_PAGE_FRAGMENT} from './RunFragments';
+import {RunHeaderActions} from './RunHeaderActions';
+import {RunRootTrace, useRunRootTrace} from './RunRootTrace';
+import {RunStatusTag} from './RunStatusTag';
+import {DagsterTag} from './RunTag';
+import {RunTimingTags} from './RunTimingTags';
+import {assetKeysForRun} from './RunUtils';
+import {TickTagForRun} from './TickTagForRun';
+import {RunRootQuery, RunRootQueryVariables} from './types/RunRoot.types';
 import {useTrackPageView} from '../app/analytics';
 import {isHiddenAssetGroupJob} from '../asset-graph/Utils';
 import {AutomaterializeTagWithEvaluation} from '../assets/AutomaterializeTagWithEvaluation';
@@ -13,20 +24,10 @@ import {isThisThingAJob} from '../workspace/WorkspaceContext';
 import {buildRepoAddress} from '../workspace/buildRepoAddress';
 import {useRepositoryForRunWithParentSnapshot} from '../workspace/useRepositoryForRun';
 
-import {AssetKeyTagCollection, AssetCheckTagCollection} from './AssetTagCollections';
-import {Run} from './Run';
-import {RunConfigDialog} from './RunConfigDialog';
-import {RUN_PAGE_FRAGMENT} from './RunFragments';
-import {RunStatusTag} from './RunStatusTag';
-import {DagsterTag} from './RunTag';
-import {RunTimingTags} from './RunTimingTags';
-import {assetKeysForRun} from './RunUtils';
-import {TickTagForRun} from './TickTagForRun';
-import {RunRootQuery, RunRootQueryVariables} from './types/RunRoot.types';
-
 export const RunRoot = () => {
   useTrackPageView();
 
+  const trace = useRunRootTrace();
   const {runId} = useParams<{runId: string}>();
   useDocumentTitle(runId ? `Run ${runId.slice(0, 8)}` : 'Run');
 
@@ -42,17 +43,23 @@ export const RunRoot = () => {
     ? buildRepoAddress(repoMatch.match.repository.name, repoMatch.match.repositoryLocation.name)
     : null;
 
-  const isJob = React.useMemo(
+  const isJob = useMemo(
     () => !!(run && repoMatch && isThisThingAJob(repoMatch.match, run.pipelineName)),
     [run, repoMatch],
   );
 
-  const automaterializeTag = React.useMemo(
+  const automaterializeTag = useMemo(
     () => run?.tags.find((tag) => tag.key === DagsterTag.AssetEvaluationID) || null,
     [run],
   );
 
-  const tickDetails = React.useMemo(() => {
+  useLayoutEffect(() => {
+    if (!loading) {
+      trace.onRunLoaded();
+    }
+  }, [loading, trace]);
+
+  const tickDetails = useMemo(() => {
     if (repoAddress) {
       const tags = run?.tags || [];
       const tickTag = tags.find((tag) => tag.key === DagsterTag.TickId);
@@ -128,7 +135,6 @@ export const RunRoot = () => {
                     tickId={tickDetails.tickId}
                   />
                 ) : null}
-                <AssetCheckTagCollection useTags assetChecks={run.assetCheckSelection} />
                 <AssetKeyTagCollection
                   useTags
                   assetKeys={
@@ -137,6 +143,7 @@ export const RunRoot = () => {
                       : run.assets.map((a) => a.key)
                   }
                 />
+                <AssetCheckTagCollection useTags assetChecks={run.assetCheckSelection} />
                 <RunTimingTags run={run} loading={loading} />
                 {automaterializeTag && run.assetSelection?.length ? (
                   <AutomaterializeTagWithEvaluation
@@ -147,10 +154,10 @@ export const RunRoot = () => {
               </Box>
             ) : null
           }
-          right={run ? <RunConfigDialog run={run} isJob={isJob} /> : null}
+          right={run ? <RunHeaderActions run={run} isJob={isJob} /> : null}
         />
       </Box>
-      <RunById data={data} runId={runId} />
+      <RunById data={data} runId={runId} trace={trace} />
     </div>
   );
 };
@@ -159,11 +166,11 @@ export const RunRoot = () => {
 // eslint-disable-next-line import/no-default-export
 export default RunRoot;
 
-const RunById = (props: {data: RunRootQuery | undefined; runId: string}) => {
-  const {data, runId} = props;
+const RunById = (props: {data: RunRootQuery | undefined; runId: string; trace: RunRootTrace}) => {
+  const {data, runId, trace} = props;
 
   if (!data || !data.pipelineRunOrError) {
-    return <Run run={undefined} runId={runId} />;
+    return <Run run={undefined} runId={runId} trace={trace} />;
   }
 
   if (data.pipelineRunOrError.__typename !== 'Run') {
@@ -178,7 +185,7 @@ const RunById = (props: {data: RunRootQuery | undefined; runId: string}) => {
     );
   }
 
-  return <Run run={data.pipelineRunOrError} runId={runId} />;
+  return <Run run={data.pipelineRunOrError} runId={runId} trace={trace} />;
 };
 
 const RUN_ROOT_QUERY = gql`

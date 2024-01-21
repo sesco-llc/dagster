@@ -1,17 +1,7 @@
-import {Page, PageHeader, Heading} from '@dagster-io/ui-components';
+import {Heading, Page, PageHeader} from '@dagster-io/ui-components';
 import isEqual from 'lodash/isEqual';
-import * as React from 'react';
+import {useCallback, useContext, useMemo} from 'react';
 import {useHistory, useParams} from 'react-router-dom';
-
-import {AssetGraphExplorer} from '../asset-graph/AssetGraphExplorer';
-import {AssetGraphFetchScope} from '../asset-graph/useAssetGraphData';
-import {AssetLocation} from '../asset-graph/useFindAssetLocation';
-import {AssetGroupSelector} from '../graphql/types';
-import {useDocumentTitle} from '../hooks/useDocumentTitle';
-import {useQueryPersistedState} from '../hooks/useQueryPersistedState';
-import {ExplorerPath} from '../pipelines/PipelinePathUtils';
-import {ReloadAllButton} from '../workspace/ReloadAllButton';
-import {WorkspaceContext} from '../workspace/WorkspaceContext';
 
 import {buildAssetGroupSelector} from './AssetGroupSuggest';
 import {assetDetailsPathForKey} from './assetDetailsPathForKey';
@@ -19,6 +9,16 @@ import {
   globalAssetGraphPathFromString,
   globalAssetGraphPathToString,
 } from './globalAssetGraphPathToString';
+import {AssetGraphExplorer} from '../asset-graph/AssetGraphExplorer';
+import {AssetGraphFetchScope} from '../asset-graph/useAssetGraphData';
+import {AssetLocation} from '../asset-graph/useFindAssetLocation';
+import {AssetGroupSelector} from '../graphql/types';
+import {useDocumentTitle} from '../hooks/useDocumentTitle';
+import {useQueryPersistedState} from '../hooks/useQueryPersistedState';
+import {useStartTrace} from '../performance';
+import {ExplorerPath} from '../pipelines/PipelinePathUtils';
+import {ReloadAllButton} from '../workspace/ReloadAllButton';
+import {WorkspaceContext} from '../workspace/WorkspaceContext';
 
 interface AssetGroupRootParams {
   0: string;
@@ -26,7 +26,7 @@ interface AssetGroupRootParams {
 
 export const AssetsGroupsGlobalGraphRoot = () => {
   const {0: path} = useParams<AssetGroupRootParams>();
-  const {visibleRepos} = React.useContext(WorkspaceContext);
+  const {visibleRepos} = useContext(WorkspaceContext);
   const history = useHistory();
 
   const [filters, setFilters] = useQueryPersistedState<{
@@ -44,8 +44,9 @@ export const AssetsGroupsGlobalGraphRoot = () => {
   });
 
   useDocumentTitle(`Global Asset Lineage`);
+  const trace = useStartTrace('GlobalAssetGraph');
 
-  const onChangeExplorerPath = React.useCallback(
+  const onChangeExplorerPath = useCallback(
     (path: ExplorerPath, mode: 'push' | 'replace') => {
       history[mode]({
         pathname: globalAssetGraphPathToString(path),
@@ -55,14 +56,14 @@ export const AssetsGroupsGlobalGraphRoot = () => {
     [history],
   );
 
-  const onNavigateToSourceAssetNode = React.useCallback(
+  const onNavigateToSourceAssetNode = useCallback(
     (node: AssetLocation) => {
       history.push(assetDetailsPathForKey(node.assetKey, {view: 'definition'}));
     },
     [history],
   );
 
-  const fetchOptions = React.useMemo(() => {
+  const fetchOptions = useMemo(() => {
     const options: AssetGraphFetchScope = {
       hideEdgesToNodesOutsideQuery: false,
       hideNodesMatching: (node) => {
@@ -102,6 +103,8 @@ export const AssetsGroupsGlobalGraphRoot = () => {
         explorerPath={globalAssetGraphPathFromString(path)}
         onChangeExplorerPath={onChangeExplorerPath}
         onNavigateToSourceAssetNode={onNavigateToSourceAssetNode}
+        isGlobalGraph
+        trace={trace}
       />
     </Page>
   );

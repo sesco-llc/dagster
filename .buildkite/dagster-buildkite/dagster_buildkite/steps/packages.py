@@ -9,6 +9,7 @@ from dagster_buildkite.steps.test_project import test_project_depends_fn
 from dagster_buildkite.utils import (
     BuildkiteStep,
     connect_sibling_docker_container,
+    has_storage_test_fixture_changes,
     network_buildkite_container,
 )
 
@@ -606,10 +607,15 @@ LIBRARY_PACKAGES_WITH_CUSTOM_CONFIG: List[PackageSpec] = [
     PackageSpec(
         "python_modules/libraries/dagster-mysql",
         pytest_extra_cmds=mysql_extra_cmds,
+        pytest_tox_factors=[
+            "storage_tests",
+            "storage_tests_sqlalchemy_1_3",
+        ],
         unsupported_python_versions=[
             # mysql-connector-python not supported on 3.11
             AvailablePythonVersion.V3_11,
         ],
+        always_run_if=has_storage_test_fixture_changes,
     ),
     PackageSpec(
         "python_modules/libraries/dagster-snowflake-pandas",
@@ -623,7 +629,15 @@ LIBRARY_PACKAGES_WITH_CUSTOM_CONFIG: List[PackageSpec] = [
             AvailablePythonVersion.V3_11,
         ],
     ),
-    PackageSpec("python_modules/libraries/dagster-postgres", pytest_extra_cmds=postgres_extra_cmds),
+    PackageSpec(
+        "python_modules/libraries/dagster-postgres",
+        pytest_extra_cmds=postgres_extra_cmds,
+        pytest_tox_factors=[
+            "storage_tests",
+            "storage_tests_sqlalchemy_1_3",
+        ],
+        always_run_if=has_storage_test_fixture_changes,
+    ),
     PackageSpec(
         "python_modules/libraries/dagster-twilio",
         env_vars=["TWILIO_TEST_ACCOUNT_SID", "TWILIO_TEST_AUTH_TOKEN"],

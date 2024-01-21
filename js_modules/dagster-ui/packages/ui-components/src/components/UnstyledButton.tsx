@@ -1,17 +1,16 @@
 import styled, {css} from 'styled-components';
 
-import {colorTextDefault, colorFocusRing} from '../theme/color';
+import {Colors} from './Color';
 
 interface Props {
   $expandedClickPx?: number;
-  $showFocusOutline?: boolean;
 }
 
 export const UnstyledButton = styled.button<Props>`
   border: 0;
   background-color: transparent;
   border-radius: 4px;
-  color: ${colorTextDefault()};
+  color: ${Colors.textDefault()};
   cursor: pointer;
   padding: 0;
   text-align: start;
@@ -28,16 +27,6 @@ export const UnstyledButton = styled.button<Props>`
           margin: -${$expandedClickPx}px;
         `
       : null}
-
-  :focus,
-  :active {
-    outline: none;
-    ${({$showFocusOutline}) =>
-      $showFocusOutline
-        ? `box-shadow: ${colorFocusRing()} 0 0 0 2px;
-      `
-        : null}
-  }
 
   &:disabled {
     color: inherit;

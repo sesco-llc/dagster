@@ -1,16 +1,31 @@
 import {
   Box,
+  Button,
+  Colors,
+  ErrorBoundary,
+  Icon,
   NonIdealState,
   SplitPanelContainer,
-  ErrorBoundary,
-  Button,
-  Icon,
   Tooltip,
-  colorBackgroundDefault,
 } from '@dagster-io/ui-components';
 import * as React from 'react';
 import styled from 'styled-components';
 
+import {CapturedOrExternalLogPanel} from './CapturedLogPanel';
+import {ComputeLogPanel} from './ComputeLogPanel';
+import {LogFilter, LogsProvider, LogsProviderLogs} from './LogsProvider';
+import {LogsScrollingTable} from './LogsScrollingTable';
+import {LogType, LogsToolbar} from './LogsToolbar';
+import {RunActionButtons} from './RunActionButtons';
+import {RunContext} from './RunContext';
+import {IRunMetadataDict, RunMetadataProvider} from './RunMetadataProvider';
+import {RunRootTrace} from './RunRootTrace';
+import {RunDagsterRunEventFragment, RunPageFragment} from './types/RunFragments.types';
+import {
+  matchingComputeLogKeyFromStepKey,
+  useComputeLogFileKeyForSelection,
+} from './useComputeLogFileKeyForSelection';
+import {useQueryPersistedLogFilter} from './useQueryPersistedLogFilter';
 import {showCustomAlert} from '../app/CustomAlertProvider';
 import {filterByQuery} from '../app/GraphQueryImpl';
 import {PythonErrorInfo} from '../app/PythonErrorInfo';
@@ -23,24 +38,10 @@ import {useFavicon} from '../hooks/useFavicon';
 import {useQueryPersistedState} from '../hooks/useQueryPersistedState';
 import {useSupportsCapturedLogs} from '../instance/useSupportsCapturedLogs';
 
-import {CapturedOrExternalLogPanel} from './CapturedLogPanel';
-import {ComputeLogPanel} from './ComputeLogPanel';
-import {LogFilter, LogsProvider, LogsProviderLogs} from './LogsProvider';
-import {LogsScrollingTable} from './LogsScrollingTable';
-import {LogsToolbar, LogType} from './LogsToolbar';
-import {RunActionButtons} from './RunActionButtons';
-import {RunContext} from './RunContext';
-import {IRunMetadataDict, RunMetadataProvider} from './RunMetadataProvider';
-import {RunDagsterRunEventFragment, RunPageFragment} from './types/RunFragments.types';
-import {
-  useComputeLogFileKeyForSelection,
-  matchingComputeLogKeyFromStepKey,
-} from './useComputeLogFileKeyForSelection';
-import {useQueryPersistedLogFilter} from './useQueryPersistedLogFilter';
-
 interface RunProps {
   runId: string;
   run?: RunPageFragment;
+  trace: RunRootTrace;
 }
 
 const runStatusFavicon = (status: RunStatus) => {
@@ -59,7 +60,7 @@ const runStatusFavicon = (status: RunStatus) => {
 };
 
 export const Run = (props: RunProps) => {
-  const {run, runId} = props;
+  const {run, runId, trace} = props;
   const [logsFilter, setLogsFilter] = useQueryPersistedLogFilter();
   const [selectionQuery, setSelectionQuery] = useQueryPersistedState<string>({
     queryKey: 'selection',
@@ -100,25 +101,35 @@ export const Run = (props: RunProps) => {
     <RunContext.Provider value={run}>
       <LogsProvider key={runId} runId={runId}>
         {(logs) => (
-          <RunMetadataProvider logs={logs}>
-            {(metadata) => (
-              <RunWithData
-                run={run}
-                runId={runId}
-                logs={logs}
-                logsFilter={logsFilter}
-                metadata={metadata}
-                selectionQuery={selectionQuery}
-                onSetLogsFilter={setLogsFilter}
-                onSetSelectionQuery={onSetSelectionQuery}
-                onShowStateDetails={onShowStateDetails}
-              />
-            )}
-          </RunMetadataProvider>
+          <>
+            <OnLogsLoaded trace={trace} />
+            <RunMetadataProvider logs={logs}>
+              {(metadata) => (
+                <RunWithData
+                  run={run}
+                  runId={runId}
+                  logs={logs}
+                  logsFilter={logsFilter}
+                  metadata={metadata}
+                  selectionQuery={selectionQuery}
+                  onSetLogsFilter={setLogsFilter}
+                  onSetSelectionQuery={onSetSelectionQuery}
+                  onShowStateDetails={onShowStateDetails}
+                />
+              )}
+            </RunMetadataProvider>
+          </>
         )}
       </LogsProvider>
     </RunContext.Provider>
   );
+};
+
+const OnLogsLoaded = ({trace}: {trace: RunRootTrace}) => {
+  React.useLayoutEffect(() => {
+    trace.onLogsLoaded();
+  }, [trace]);
+  return null;
 };
 
 interface RunWithDataProps {
@@ -395,7 +406,7 @@ const NoStepSelectionState = ({type}: {type: LogType}) => {
         alignItems: 'center',
         justifyContent: 'center',
       }}
-      style={{background: colorBackgroundDefault()}}
+      style={{background: Colors.backgroundDefault()}}
     >
       <NonIdealState
         title={`Select a step to view ${type}`}

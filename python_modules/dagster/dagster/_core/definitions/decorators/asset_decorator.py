@@ -625,7 +625,7 @@ def multi_asset(
         additional_message="Only dicts are supported for asset config_schema.",
     )
 
-    bare_required_resource_keys = set(required_resource_keys)
+    bare_required_resource_keys = required_resource_keys.copy()
     resource_defs_keys = set(resource_defs.keys())
     required_resource_keys = bare_required_resource_keys | resource_defs_keys
 
@@ -1369,14 +1369,14 @@ def _deps_and_non_argument_deps_to_asset_deps(
         )
 
     if deps is not None:
-        return _make_asset_deps(deps)
+        return make_asset_deps(deps)
 
     if non_argument_deps is not None:
         check.set_param(non_argument_deps, "non_argument_deps", of_type=(AssetKey, str))
-        return _make_asset_deps(non_argument_deps)
+        return make_asset_deps(non_argument_deps)
 
 
-def _make_asset_deps(deps: Optional[Iterable[CoercibleToAssetDep]]) -> Optional[Iterable[AssetDep]]:
+def make_asset_deps(deps: Optional[Iterable[CoercibleToAssetDep]]) -> Optional[Iterable[AssetDep]]:
     if deps is None:
         return None
 

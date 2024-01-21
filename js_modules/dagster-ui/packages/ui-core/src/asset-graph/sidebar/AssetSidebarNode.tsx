@@ -1,23 +1,19 @@
 import {
   Box,
+  Colors,
   Icon,
   MiddleTruncate,
   Popover,
   UnstyledButton,
-  colorAccentGray,
-  colorBackgroundBlue,
-  colorBackgroundLightHover,
-  colorKeylineDefault,
 } from '@dagster-io/ui-components';
-import React from 'react';
+import * as React from 'react';
 import styled from 'styled-components';
-
-import {ExplorerPath} from '../../pipelines/PipelinePathUtils';
-import {useAssetNodeMenu} from '../AssetNodeMenu';
-import {GraphData, GraphNode} from '../Utils';
 
 import {StatusDot} from './StatusDot';
 import {FolderNodeNonAssetType, getDisplayName} from './util';
+import {ExplorerPath} from '../../pipelines/PipelinePathUtils';
+import {useAssetNodeMenu} from '../AssetNodeMenu';
+import {GraphData, GraphNode} from '../Utils';
 
 export const AssetSidebarNode = ({
   node,
@@ -75,12 +71,11 @@ export const AssetSidebarNode = ({
 
   return (
     <>
-      <Box ref={elementRef} onClick={selectThisNode} padding={{left: 8}}>
+      <Box ref={elementRef} padding={{left: 8}}>
         <BoxWrapper level={level}>
-          <Box padding={{right: 12}} flex={{direction: 'row', alignItems: 'center'}}>
+          <ItemContainer padding={{right: 12}} flex={{direction: 'row', alignItems: 'center'}}>
             {showArrow ? (
               <UnstyledButton
-                $showFocusOutline
                 onClick={(e) => {
                   e.stopPropagation();
                   toggleOpen();
@@ -98,17 +93,22 @@ export const AssetSidebarNode = ({
                   style={{transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)'}}
                 />
               </UnstyledButton>
+            ) : level === 1 && isAssetNode ? (
+              // Special case for when asset nodes are at the root (level = 1) due to their being only a single group.
+              // In this case we don't need the spacer div to align nodes because  none of the nodes will be collapsible/un-collapsible.
+              <div />
             ) : (
+              // Spacer div to align nodes with collapse/un-collapse arrows with nodes that don't have collapse/un-collapse arrows
               <div style={{width: 18}} />
             )}
             <GrayOnHoverBox
-              onDoubleClick={toggleOpen}
+              onClick={selectThisNode}
+              onDoubleClick={(e) => !e.metaKey && toggleOpen()}
               style={{
                 width: '100%',
                 borderRadius: '8px',
-                ...(isSelected ? {background: colorBackgroundBlue()} : {}),
+                ...(isSelected ? {background: Colors.backgroundBlue()} : {}),
               }}
-              $showFocusOutline={true}
               ref={ref}
             >
               <div
@@ -124,7 +124,9 @@ export const AssetSidebarNode = ({
                 {isLocationNode ? <Icon name="folder_open" /> : null}
                 <MiddleTruncate text={displayName} />
               </div>
-              {isAssetNode ? (
+            </GrayOnHoverBox>
+            {isAssetNode ? (
+              <ExpandMore>
                 <AssetNodePopoverMenu
                   graphData={fullAssetGraphData}
                   node={node}
@@ -132,9 +134,9 @@ export const AssetSidebarNode = ({
                   explorerPath={explorerPath}
                   onChangeExplorerPath={onChangeExplorerPath}
                 />
-              ) : null}
-            </GrayOnHoverBox>
-          </Box>
+              </ExpandMore>
+            ) : null}
+          </ItemContainer>
         </BoxWrapper>
       </Box>
     </>
@@ -144,32 +146,20 @@ export const AssetSidebarNode = ({
 const AssetNodePopoverMenu = (props: Parameters<typeof useAssetNodeMenu>[0]) => {
   const {menu, dialog} = useAssetNodeMenu(props);
   return (
-    <div
-      onClick={(e) => {
-        // stop propagation outside of the popover to prevent parent onClick from being selected
-        e.stopPropagation();
-      }}
-      onKeyDown={(e) => {
-        if (e.code === 'Space') {
-          // Prevent the default scrolling behavior
-          e.preventDefault();
-        }
-      }}
-    >
+    <>
       {dialog}
       <Popover
         content={menu}
-        hoverOpenDelay={100}
-        hoverCloseDelay={100}
         placement="right"
         shouldReturnFocusOnClose
         canEscapeKeyClose
+        modifiers={{offset: {enabled: true, options: {offset: [0, 12]}}}}
       >
-        <ExpandMore tabIndex={0} role="button">
-          <Icon name="more_horiz" color={colorAccentGray()} />
-        </ExpandMore>
+        <UnstyledButton>
+          <Icon name="more_horiz" color={Colors.accentGray()} />
+        </UnstyledButton>
       </Popover>
-    </div>
+    </>
   );
 };
 
@@ -182,7 +172,7 @@ const BoxWrapper = ({level, children}: {level: number; children: React.ReactNode
           padding={{left: 8}}
           margin={{left: 8}}
           border={
-            i < level - 1 ? {side: 'left', width: 1, color: colorKeylineDefault()} : undefined
+            i < level - 1 ? {side: 'left', width: 1, color: Colors.keylineDefault()} : undefined
           }
           style={{position: 'relative'}}
         >
@@ -196,7 +186,12 @@ const BoxWrapper = ({level, children}: {level: number; children: React.ReactNode
   return <>{wrapper}</>;
 };
 
-const ExpandMore = styled.div``;
+const ExpandMore = styled.div`
+  position: absolute;
+  top: 8px;
+  right: 20px;
+  visibility: hidden;
+`;
 
 const GrayOnHoverBox = styled(UnstyledButton)`
   border-radius: 8px;
@@ -211,17 +206,22 @@ const GrayOnHoverBox = styled(UnstyledButton)`
   gap: 6;
   flex-grow: 1;
   flex-shrink: 1;
+  transition: background 100ms linear;
+`;
+
+const ItemContainer = styled(Box)`
+  height: 32px;
+  position: relative;
+
   &:hover,
   &:focus-within {
-    background: ${colorBackgroundLightHover()};
-    transition: background 100ms linear;
-    box-shadow: none;
+    ${GrayOnHoverBox} {
+      background: ${Colors.backgroundLightHover()};
+    }
+
     ${ExpandMore} {
       visibility: visible;
     }
-  }
-  ${ExpandMore} {
-    visibility: hidden;
   }
 `;
 

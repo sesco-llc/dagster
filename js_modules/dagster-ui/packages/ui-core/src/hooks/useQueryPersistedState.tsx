@@ -1,9 +1,11 @@
 import isEqual from 'lodash/isEqual';
 import qs from 'qs';
-import React from 'react';
+import {useCallback, useMemo, useRef} from 'react';
 import {useHistory, useLocation} from 'react-router-dom';
 
-type QueryPersistedDataType =
+import {useSetStateUpdateCallback} from './useSetStateUpdateCallback';
+
+export type QueryPersistedDataType =
   | {[key: string]: any}
   | Array<any>
   | (string | undefined | number)
@@ -70,7 +72,7 @@ export function useQueryPersistedState<T extends QueryPersistedDataType>(
 
   // Note: If you have provided defaults and no encoder/decoder, the `value` exposed by
   // useQueryPersistedState only includes those keys so other params don't leak into your value.
-  const qsDecoded = React.useMemo(() => {
+  const qsDecoded = useMemo(() => {
     // We stash the query string into a ref so that the setter can operate on the /current/
     // location even if the user retains it and calls it after other query string changes.
     currentQueryString = qs.parse(location.search, {ignoreQueryPrefix: true});
@@ -82,8 +84,8 @@ export function useQueryPersistedState<T extends QueryPersistedDataType>(
   // If `decode` yields a non-primitive type (eg: object or array), by default we yield
   // an object with a new identity on every render. To prevent possible render loops caused by
   // our value as a useEffect dependency, etc., we re-use the last yielded object if it isEqual.
-  const valueRef = React.useRef<T>(qsDecoded);
-  const onChangeRef = React.useCallback<(updated: T) => void>(
+  const valueRef = useRef<T>(qsDecoded);
+  const onChangeRef = useCallback<(updated: T) => void>(
     (updated: T) => {
       const next = {
         ...currentQueryString,
@@ -107,7 +109,7 @@ export function useQueryPersistedState<T extends QueryPersistedDataType>(
   if (!isEqual(valueRef.current, qsDecoded)) {
     valueRef.current = qsDecoded;
   }
-  return [valueRef.current, onChangeRef];
+  return [valueRef.current, useSetStateUpdateCallback(valueRef.current, onChangeRef)];
 }
 
 function inferTypeOfQueryParam<T>(q: any): T {

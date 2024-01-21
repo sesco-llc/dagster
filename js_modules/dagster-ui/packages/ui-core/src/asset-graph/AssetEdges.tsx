@@ -1,5 +1,5 @@
-import {colorLineageEdgeHighlighted, colorLineageEdge} from '@dagster-io/ui-components';
-import React from 'react';
+import {Colors} from '@dagster-io/ui-components';
+import {Fragment, memo} from 'react';
 
 import {buildSVGPath} from './Utils';
 import {AssetLayoutEdge} from './layout';
@@ -7,7 +7,7 @@ import {AssetLayoutEdge} from './layout';
 interface AssetEdgesProps {
   edges: AssetLayoutEdge[];
   selected: string[] | null;
-  highlighted: string | null;
+  highlighted: string[] | null;
   strokeWidth?: number;
   viewportRect: {top: number; left: number; right: number; bottom: number};
 }
@@ -29,26 +29,26 @@ export const AssetEdges = ({
       doesViewportContainPoint(edge.to, viewportRect),
   );
   return (
-    <React.Fragment>
+    <Fragment>
       <AssetEdgeSet
-        color={colorLineageEdge()}
+        color={Colors.lineageEdge()}
         edges={intersectedEdges.length > 50 ? visibleToFromEdges : intersectedEdges}
         strokeWidth={strokeWidth}
         viewportRect={viewportRect}
       />
       <AssetEdgeSet
-        color={colorLineageEdgeHighlighted()}
+        color={Colors.lineageEdgeHighlighted()}
         edges={edges.filter(
           ({fromId, toId}) =>
             selected?.includes(fromId) ||
             selected?.includes(toId) ||
-            highlighted === fromId ||
-            highlighted === toId,
+            highlighted?.includes(fromId) ||
+            highlighted?.includes(toId),
         )}
         strokeWidth={strokeWidth}
         viewportRect={viewportRect}
       />
-    </React.Fragment>
+    </Fragment>
   );
 };
 
@@ -59,7 +59,7 @@ interface AssetEdgeSetProps {
   viewportRect: {top: number; left: number; right: number; bottom: number};
 }
 
-const AssetEdgeSet = React.memo(({edges, color, strokeWidth}: AssetEdgeSetProps) => (
+const AssetEdgeSet = memo(({edges, color, strokeWidth}: AssetEdgeSetProps) => (
   <>
     <defs>
       <marker

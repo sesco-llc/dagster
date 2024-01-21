@@ -1,5 +1,5 @@
 import memoize from 'lodash/memoize';
-import * as React from 'react';
+import {useMemo} from 'react';
 
 import {getJSONForKey} from '../hooks/useStateWithStorage';
 
@@ -9,11 +9,9 @@ export const DAGSTER_FLAGS_KEY = 'DAGSTER_FLAGS';
 export const FeatureFlag = {
   flagDebugConsoleLogging: 'flagDebugConsoleLogging' as const,
   flagDisableWebsockets: 'flagDisableWebsockets' as const,
-  flagSensorScheduleLogging: 'flagSensorScheduleLogging' as const,
   flagSidebarResources: 'flagSidebarResources' as const,
   flagDisableAutoLoadDefaults: 'flagDisableAutoLoadDefaults' as const,
-  flagDAGSidebar: 'flagDAGSidebar' as const,
-  flagDisableDAGCache: 'flagDisableDAGCache' as const,
+  flagUseNewAutomationPage: 'flagUseNewAutomationPage' as const,
 };
 export type FeatureFlagType = keyof typeof FeatureFlag;
 
@@ -28,7 +26,7 @@ type FlagMap = {
 };
 
 export const useFeatureFlags = () => {
-  return React.useMemo(() => {
+  return useMemo(() => {
     const flagSet = new Set(getFeatureFlags());
     const all: Record<string, boolean> = {};
     for (const flag in FeatureFlag) {

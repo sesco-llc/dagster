@@ -1,4 +1,4 @@
-import {Box, TextInput, Button, ButtonGroup, ErrorBoundary} from '@dagster-io/ui-components';
+import {Box, Button, ButtonGroup, ErrorBoundary, TextInput} from '@dagster-io/ui-components';
 import * as React from 'react';
 
 import {FIFTEEN_SECONDS, useQueryRefreshAtInterval} from '../app/QueryRefresh';
@@ -6,8 +6,9 @@ import {useTrackPageView} from '../app/analytics';
 import {useDocumentTitle} from '../hooks/useDocumentTitle';
 import {useQueryPersistedState} from '../hooks/useQueryPersistedState';
 import {RepoFilterButton} from '../instance/RepoFilterButton';
+import {useStartTrace} from '../performance';
 import {RunTimeline} from '../runs/RunTimeline';
-import {useHourWindow, HourWindow} from '../runs/useHourWindow';
+import {HourWindow, useHourWindow} from '../runs/useHourWindow';
 import {makeJobKey, useRunsForTimeline} from '../runs/useRunsForTimeline';
 import {WorkspaceContext} from '../workspace/WorkspaceContext';
 import {buildRepoAddress} from '../workspace/buildRepoAddress';
@@ -36,6 +37,7 @@ type Props = {
 export const OverviewTimelineRoot = ({Header, TabButton}: Props) => {
   useTrackPageView();
   useDocumentTitle('Overview | Timeline');
+  const trace = useStartTrace('OverviewTimelineRoot');
 
   const {allRepos, visibleRepos} = React.useContext(WorkspaceContext);
 
@@ -80,6 +82,12 @@ export const OverviewTimelineRoot = ({Header, TabButton}: Props) => {
 
   const {jobs, initialLoading, queryData} = useRunsForTimeline(range);
   const refreshState = useQueryRefreshAtInterval(queryData, FIFTEEN_SECONDS);
+
+  React.useEffect(() => {
+    if (!initialLoading) {
+      trace.endTrace();
+    }
+  }, [initialLoading, trace]);
 
   const visibleJobKeys = React.useMemo(() => {
     const searchLower = searchValue.toLocaleLowerCase().trim();

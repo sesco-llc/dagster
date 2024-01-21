@@ -1,15 +1,6 @@
-import {
-  IconWrapper,
-  Icon,
-  CoreColors,
-  ProductTour,
-  ProductTourPosition,
-} from '@dagster-io/ui-components';
-import {DAGSTER_THEME_KEY} from '@dagster-io/ui-components/src/theme/theme';
-import * as React from 'react';
+import {Colors, Icon, IconWrapper} from '@dagster-io/ui-components';
+import {useState} from 'react';
 import styled from 'styled-components';
-
-import {useStateWithStorage} from '../hooks/useStateWithStorage';
 
 import {UserSettingsDialog} from './UserSettingsDialog';
 import {getVisibleFeatureFlagRows} from './getVisibleFeatureFlagRows';
@@ -25,63 +16,29 @@ const SettingsButton = styled.button`
   }
 
   &:hover ${IconWrapper} {
-    background: ${CoreColors.White};
+    background: ${Colors.navTextHover()};
   }
 
   &:active ${IconWrapper} {
-    background: ${CoreColors.White};
+    background: ${Colors.navTextHover()};
   }
 
   &:focus {
     outline: none;
 
     ${IconWrapper} {
-      background: ${CoreColors.White};
+      background: ${Colors.navTextHover()};
     }
   }
 `;
 
 export const UserSettingsButton = () => {
-  const [isOpen, setIsOpen] = React.useState(false);
-
-  const [theme] = useStateWithStorage(DAGSTER_THEME_KEY, (value: any) => value);
-  const [shouldHideUIThemeNux, setShouldHideUIThemeNux] = useStateWithStorage<string | null>(
-    'dagster-theme-nux',
-    (value) => value,
-  );
-
-  const button = (
-    <SettingsButton onClick={() => setIsOpen(true)} title="User settings">
-      <Icon name="settings" color={CoreColors.Gray200} />
-    </SettingsButton>
-  );
-
-  const target =
-    // If the user already has a theme setting, or has hidden the product tour already, just
-    // show the usual gear button.
-    !!theme || shouldHideUIThemeNux ? (
-      button
-    ) : (
-      <ProductTour
-        title="New: UI Themes"
-        description={
-          <span>You can now select a dark or light mode UI theme from your user settings.</span>
-        }
-        position={ProductTourPosition.BOTTOM_RIGHT}
-        actions={{
-          dismiss: () => {
-            setShouldHideUIThemeNux('1');
-          },
-        }}
-        modifiers={{offset: {enabled: true, options: {offset: [-12, 8]}}}}
-      >
-        {button}
-      </ProductTour>
-    );
-
+  const [isOpen, setIsOpen] = useState(false);
   return (
     <>
-      {target}
+      <SettingsButton onClick={() => setIsOpen(true)} title="User settings">
+        <Icon name="settings" color={Colors.navTextSelected()} />
+      </SettingsButton>
       <UserSettingsDialog
         isOpen={isOpen}
         onClose={() => setIsOpen(false)}

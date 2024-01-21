@@ -1,27 +1,4 @@
-import {
-  Group,
-  Icon,
-  Spinner,
-  FontFamily,
-  colorAccentYellow,
-  CoreColors,
-  colorBackgroundLight,
-  colorBackgroundLighter,
-  colorKeylineDefault,
-  colorBackgroundLightHover,
-  colorTextDefault,
-  colorTextLight,
-  colorBorderDefault,
-  colorBackgroundYellow,
-  colorTextLighter,
-  colorAccentBlue,
-  colorTextBlue,
-  colorAccentGreen,
-  colorAccentRed,
-  colorAccentCyan,
-  colorAccentGray,
-  colorAccentOlive,
-} from '@dagster-io/ui-components';
+import {Colors, FontFamily, Group, Icon, Spinner} from '@dagster-io/ui-components';
 import Ansi from 'ansi-to-react';
 import * as React from 'react';
 import styled, {createGlobalStyle} from 'styled-components';
@@ -80,7 +57,7 @@ export const RawLogContent = React.memo((props: Props) => {
   const warning = isTruncated ? (
     <FileWarning>
       <Group direction="row" spacing={8} alignItems="center">
-        <Icon name="warning" color={colorAccentYellow()} />
+        <Icon name="warning" color={Colors.accentYellow()} />
         <div>
           This log has exceeded the 5MB limit.{' '}
           {downloadUrl ? (
@@ -104,7 +81,7 @@ export const RawLogContent = React.memo((props: Props) => {
               onMouseOut={scheduleHideWarning}
             >
               <Group direction="row" spacing={8} alignItems="center">
-                <Icon name="arrow_upward" color={CoreColors.White} />
+                <Icon name="arrow_upward" color={Colors.accentPrimary()} />
                 Scroll to top
               </Group>
             </ScrollToTop>
@@ -166,13 +143,17 @@ class ScrollContainer extends React.Component<IScrollContainerProps> {
       return false;
     }
     const {scrollHeight, scrollTop, offsetHeight} = this.container.current;
-    const shouldScroll = offsetHeight + scrollTop >= scrollHeight;
+
+    // Note: The +1 here accounts for these numbers occasionally being off by 0.5px in FF
+    const shouldScroll = offsetHeight + scrollTop + 1 >= scrollHeight;
     return shouldScroll;
   }
 
   componentDidUpdate(_props: any, _state: any, shouldScroll: boolean) {
     if (shouldScroll) {
-      this.scrollToBottom();
+      window.requestAnimationFrame(() => {
+        this.scrollToBottom();
+      });
     }
     if (this.props.isSelected && !_props.isSelected) {
       this.container.current && this.container.current.focus();
@@ -235,11 +216,34 @@ class ScrollContainer extends React.Component<IScrollContainerProps> {
       );
     }
 
+    const onSelectAll = (e: React.KeyboardEvent) => {
+      const range = document.createRange();
+      const sel = document.getSelection();
+      const contentEl = e.currentTarget.querySelector('[data-content]');
+      if (!sel || !contentEl) {
+        return;
+      }
+      range.selectNode(contentEl);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      e.preventDefault();
+    };
+
     return (
-      <div className={className} style={{outline: 'none'}} ref={this.container} tabIndex={0}>
+      <div
+        className={className}
+        style={{outline: 'none'}}
+        ref={this.container}
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+            onSelectAll(e);
+          }
+        }}
+      >
         <ContentContainer>
           <LineNumbers content={content} />
-          <Content>
+          <Content data-content={true}>
             <SolarizedColors />
             <Ansi linkify={false} useClasses>
               {content}
@@ -253,62 +257,81 @@ class ScrollContainer extends React.Component<IScrollContainerProps> {
 
 const LineNumbers = (props: IScrollContainerProps) => {
   const {content} = props;
-  if (!content) {
-    return null;
-  }
-  const matches = content.match(/\n/g);
+  const lastCount = React.useRef(0);
+  const container = React.createRef<HTMLDivElement>();
+
+  const matches = (content || '').match(/\n/g);
   const count = matches ? matches.length : 0;
-  return (
-    <LineNumberContainer>
-      {Array.from(Array(count), (_, i) => (
-        <div key={i}>{String(i + 1)}</div>
-      ))}
-    </LineNumberContainer>
-  );
+
+  // The common case here is 1+ new line numbers appearing on each render. Until we fully
+  // virtualize this UI, a good solution is to append a new div containing just the added
+  // line numbers. This avoids repaint + relayout of the existing line numbers, which takes
+  // 100ms per 100k lines of logs.
+  React.useLayoutEffect(() => {
+    const containerEl = container.current;
+    if (!containerEl) {
+      return;
+    }
+    if (count < lastCount.current) {
+      containerEl.textContent = '';
+      lastCount.current = 0;
+    }
+    const div = document.createElement('div');
+    const addedCount = count - lastCount.current;
+    div.textContent = Array.from(Array(addedCount), (_, i) =>
+      String(lastCount.current + i + 1),
+    ).join('\n');
+    containerEl.appendChild(div);
+    lastCount.current = count;
+  }, [container, count]);
+
+  return <LineNumberContainer ref={container} />;
 };
 
 const Content = styled.div`
   padding: 10px;
-  background-color: ${colorBackgroundLight()};
+  background-color: ${Colors.backgroundLight()};
 `;
 
 const LineNumberContainer = styled.div`
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  border-right: 1px solid ${colorKeylineDefault()};
+  border-right: 1px solid ${Colors.keylineDefault()};
   padding: 10px 10px 10px 20px;
   margin-right: 5px;
-  background-color: ${colorBackgroundLightHover()};
+  background-color: ${Colors.backgroundLightHover()};
   opacity: 0.8;
-  color: ${colorTextLighter()};
+  color: ${Colors.textLighter()};
   min-height: 100%;
+  user-select: none;
+
+  & > div {
+    text-align: right;
+  }
 `;
 
 const SolarizedColors = createGlobalStyle`
   .ansi-black {
-    color: ${colorAccentOlive()};
+    color: ${Colors.accentOlive()};
   }
   .ansi-red {
-    color: ${colorAccentRed()};
+    color: ${Colors.accentRed()};
   }
   .ansi-green {
-    color: ${colorAccentGreen()};
+    color: ${Colors.accentGreen()};
   }
   .ansi-yellow {
-    color: ${colorAccentYellow()};
+    color: ${Colors.accentYellow()};
   }
   .ansi-blue {
-    color: ${colorAccentBlue()};
+    color: ${Colors.accentBlue()};
   }
   .ansi-magenta {
-    color: ${colorTextBlue()};
+    color: ${Colors.textBlue()};
   }
   .ansi-cyan {
-    color: ${colorAccentCyan()};
+    color: ${Colors.accentCyan()};
   }
   .ansi-white {
-    color: ${colorAccentGray()};
+    color: ${Colors.accentGray()};
   }
 `;
 
@@ -316,7 +339,7 @@ const ContentContainer = styled.div`
   display: flex;
   flex-direction: row;
   min-height: 100%;
-  background-color: ${colorBackgroundLight()};
+  background-color: ${Colors.backgroundLight()};
 `;
 
 const FileContainer = styled.div`
@@ -333,9 +356,9 @@ const FileFooter = styled.div`
   flex-direction: row;
   align-items: center;
   height: 30px;
-  background-color: ${colorBackgroundLight()};
-  border-top: 0.5px solid ${colorKeylineDefault()};
-  color: ${colorTextLight()};
+  background-color: ${Colors.backgroundLight()};
+  border-top: 0.5px solid ${Colors.keylineDefault()};
+  color: ${Colors.textLight()};
   padding: 2px 5px;
   font-size: 0.85em;
   ${({isVisible}: {isVisible: boolean}) => (isVisible ? null : 'display: none;')}
@@ -353,7 +376,7 @@ const RelativeContainer = styled.div`
 `;
 
 const LogContent = styled(ScrollContainer)`
-  color: ${colorTextDefault()};
+  color: ${Colors.textDefault()};
   font-family: ${FontFamily.monospace};
   font-size: 16px;
   white-space: pre;
@@ -364,6 +387,7 @@ const LogContent = styled(ScrollContainer)`
   left: 0;
   right: 0;
 `;
+
 const LoadingContainer = styled.div`
   display: flex;
   justifycontent: center;
@@ -373,7 +397,7 @@ const LoadingContainer = styled.div`
   bottom: 0;
   left: 0;
   right: 0;
-  backgroundcolor: ${CoreColors.Gray800};
+  background-color: ${Colors.backgroundDefault()};
   opacity: 0.3;
 `;
 
@@ -389,20 +413,26 @@ const ScrollToast = styled.div`
   align-items: flex-start;
   z-index: 1;
 `;
-const ScrollToTop = styled.div`
-  background-color: ${colorBackgroundLighter()};
-  padding: 10px 20px;
+
+const ScrollToTop = styled.button`
+  background-color: ${Colors.backgroundLighter()};
+  padding: 12px 20px 12px 14px;
   border-bottom-right-radius: 5px;
   border-bottom-left-radius: 5px;
-  color: ${colorTextDefault()};
-  border-bottom: 1px solid ${colorBorderDefault()};
-  border-left: 1px solid ${colorBorderDefault()};
-  border-right: 1px solid ${colorBorderDefault()};
+  color: ${Colors.textDefault()};
+  border: 1px solid ${Colors.borderDefault()};
+  border-width: 0 1px 1px 1px;
   cursor: pointer;
+  transition: background-color 100ms linear;
+
+  :hover {
+    background-color: ${Colors.backgroundLighterHover()};
+    border-color: ${Colors.borderHover()};
+  }
 `;
 
 const FileWarning = styled.div`
-  background-color: ${colorBackgroundYellow()};
+  background-color: ${Colors.backgroundYellow()};
   padding: 10px 20px;
   margin: 20px 70px;
   border-radius: 5px;

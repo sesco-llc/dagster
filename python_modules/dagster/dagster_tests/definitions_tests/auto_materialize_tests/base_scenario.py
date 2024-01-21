@@ -6,6 +6,7 @@ import logging
 import os
 import random
 import sys
+import threading
 from typing import (
     AbstractSet,
     Iterable,
@@ -44,23 +45,25 @@ from dagster import (
     observable_source_asset,
     repository,
 )
+from dagster._core.definitions.asset_checks import AssetChecksDefinition
 from dagster._core.definitions.asset_daemon_context import (
     AssetDaemonContext,
     get_implicit_auto_materialize_policy,
 )
-from dagster._core.definitions.asset_daemon_cursor import AssetDaemonCursor
+from dagster._core.definitions.asset_daemon_cursor import (
+    AssetDaemonCursor,
+)
 from dagster._core.definitions.asset_graph import AssetGraph
 from dagster._core.definitions.asset_graph_subset import AssetGraphSubset
 from dagster._core.definitions.auto_materialize_policy import AutoMaterializePolicy
 from dagster._core.definitions.auto_materialize_rule import AutoMaterializeRule
 from dagster._core.definitions.auto_materialize_rule_evaluation import (
-    AutoMaterializeAssetEvaluation,
     AutoMaterializeDecisionType,
     AutoMaterializeRuleEvaluation,
     AutoMaterializeRuleEvaluationData,
 )
 from dagster._core.definitions.data_version import DataVersionsByPartition
-from dagster._core.definitions.events import AssetKeyPartitionKey, CoercibleToAssetKey
+from dagster._core.definitions.events import CoercibleToAssetKey
 from dagster._core.definitions.external_asset_graph import ExternalAssetGraph
 from dagster._core.definitions.freshness_policy import FreshnessPolicy
 from dagster._core.definitions.observe import observe
@@ -78,7 +81,11 @@ from dagster._core.test_utils import (
     create_test_daemon_workspace_context,
 )
 from dagster._core.types.loadable_target_origin import LoadableTargetOrigin
-from dagster._daemon.asset_daemon import AssetDaemon
+from dagster._daemon.asset_daemon import (
+    AssetDaemon,
+    asset_daemon_cursor_from_pre_sensor_auto_materialize_serialized_cursor,
+)
+from dagster._serdes.serdes import serialize_value
 from dagster._utils import SingleInstigatorDebugCrashFlags
 
 
@@ -127,33 +134,6 @@ class AssetEvaluationSpec(NamedTuple):
             num_discarded=1 if rule.decision_type == AutoMaterializeDecisionType.DISCARD else 0,
         )
 
-    def to_evaluation(
-        self, asset_graph: AssetGraph, instance: DagsterInstance
-    ) -> AutoMaterializeAssetEvaluation:
-        asset_key = AssetKey.from_coercible(self.asset_key)
-        return AutoMaterializeAssetEvaluation.from_rule_evaluation_results(
-            asset_graph=asset_graph,
-            asset_key=asset_key,
-            asset_partitions_by_rule_evaluation=[
-                (
-                    rule_evaluation,
-                    (
-                        {
-                            AssetKeyPartitionKey(asset_key, partition_key)
-                            for partition_key in partition_keys
-                        }
-                        if partition_keys
-                        else set()
-                    ),
-                )
-                for rule_evaluation, partition_keys in self.rule_evaluations
-            ],
-            num_requested=self.num_requested,
-            num_skipped=self.num_skipped,
-            num_discarded=self.num_discarded,
-            dynamic_partitions_store=instance,
-        )
-
 
 class AssetReconciliationScenario(
     NamedTuple(
@@ -161,6 +141,7 @@ class AssetReconciliationScenario(
         [
             ("unevaluated_runs", Sequence[RunSpec]),
             ("assets", Optional[Sequence[Union[SourceAsset, AssetsDefinition]]]),
+            ("asset_checks", Optional[Sequence[AssetChecksDefinition]]),
             ("between_runs_delta", Optional[datetime.timedelta]),
             ("evaluation_delta", Optional[datetime.timedelta]),
             ("cursor_from", Optional["AssetReconciliationScenario"]),
@@ -188,6 +169,7 @@ class AssetReconciliationScenario(
         cls,
         unevaluated_runs: Sequence[RunSpec],
         assets: Optional[Sequence[Union[SourceAsset, AssetsDefinition]]],
+        asset_checks: Optional[Sequence[AssetChecksDefinition]] = None,
         between_runs_delta: Optional[datetime.timedelta] = None,
         evaluation_delta: Optional[datetime.timedelta] = None,
         cursor_from: Optional["AssetReconciliationScenario"] = None,
@@ -215,10 +197,10 @@ class AssetReconciliationScenario(
             or isinstance(a, SourceAsset)
             for a in assets
         ):
-            asset_graph = AssetGraph.from_assets(assets)
+            asset_graph = AssetGraph.from_assets(assets, asset_checks=asset_checks)
             auto_materialize_asset_keys = (
                 asset_selection.resolve(asset_graph)
-                if asset_selection
+                if asset_selection is not None
                 else asset_graph.materializable_asset_keys
             )
             assets_with_implicit_policies = with_implicit_auto_materialize_policies(
@@ -229,6 +211,7 @@ class AssetReconciliationScenario(
             cls,
             unevaluated_runs=unevaluated_runs,
             assets=assets_with_implicit_policies,
+            asset_checks=asset_checks,
             between_runs_delta=between_runs_delta,
             evaluation_delta=evaluation_delta,
             cursor_from=cursor_from,
@@ -363,7 +346,9 @@ class AssetReconciliationScenario(
                     )
 
                 # make sure we can deserialize it using the new asset graph
-                cursor = AssetDaemonCursor.from_serialized(cursor.serialize(), repo.asset_graph)
+                cursor = asset_daemon_cursor_from_pre_sensor_auto_materialize_serialized_cursor(
+                    serialize_value(cursor), repo.asset_graph
+                )
 
             else:
                 cursor = AssetDaemonCursor.empty()
@@ -529,8 +514,13 @@ class AssetReconciliationScenario(
 
                 try:
                     list(
-                        AssetDaemon(interval_seconds=42)._run_iteration_impl(  # noqa: SLF001
-                            workspace_context, debug_crash_flags or {}
+                        AssetDaemon(pre_sensor_interval_seconds=42)._run_iteration_impl(  # noqa: SLF001
+                            workspace_context,
+                            threadpool_executor=None,
+                            amp_tick_futures={},
+                            last_submit_times={},
+                            debug_crash_flags=(debug_crash_flags or {}),
+                            sensor_state_lock=threading.Lock(),
                         )
                     )
 

@@ -1,37 +1,54 @@
-import {gql, useQuery, useMutation} from '@apollo/client';
+import {gql, useMutation, useQuery} from '@apollo/client';
 import {
-  Subheading,
-  MetadataTableWIP,
-  StyledRawCodeMirror,
-  PageHeader,
-  Heading,
   Box,
+  Button,
+  ButtonLink,
+  Colors,
   Dialog,
   DialogBody,
   DialogFooter,
+  Heading,
   Icon,
   Menu,
   MenuItem,
+  MetadataTableWIP,
   Mono,
+  NonIdealState,
+  Page,
+  PageHeader,
   Popover,
   Spinner,
-  ButtonLink,
+  StyledRawCodeMirror,
+  Subheading,
   Table,
   Tag,
   TextInput,
-  Button,
-  NonIdealState,
-  Page,
   Tooltip,
-  colorAccentGray,
-  colorTextLight,
-  colorBackgroundYellow,
 } from '@dagster-io/ui-components';
 import * as React from 'react';
 import {Link} from 'react-router-dom';
 
+import {InstancePageContext} from './InstancePageContext';
+import {InstanceTabs} from './InstanceTabs';
+import {
+  ConcurrencyKeyDetailsQuery,
+  ConcurrencyKeyDetailsQueryVariables,
+  ConcurrencyLimitFragment,
+  ConcurrencyStepFragment,
+  DeleteConcurrencyLimitMutation,
+  DeleteConcurrencyLimitMutationVariables,
+  FreeConcurrencySlotsMutation,
+  FreeConcurrencySlotsMutationVariables,
+  InstanceConcurrencyLimitsQuery,
+  InstanceConcurrencyLimitsQueryVariables,
+  RunQueueConfigFragment,
+  RunsForConcurrencyKeyQuery,
+  RunsForConcurrencyKeyQueryVariables,
+  SetConcurrencyLimitMutation,
+  SetConcurrencyLimitMutationVariables,
+} from './types/InstanceConcurrency.types';
 import {showSharedToaster} from '../app/DomUtils';
-import {useQueryRefreshAtInterval, FIFTEEN_SECONDS} from '../app/QueryRefresh';
+import {FIFTEEN_SECONDS, useQueryRefreshAtInterval} from '../app/QueryRefresh';
 import {COMMON_COLLATOR} from '../app/Util';
 import {useTrackPageView} from '../app/analytics';
 import {RunStatus} from '../graphql/types';
@@ -41,23 +58,8 @@ import {failedStatuses} from '../runs/RunStatuses';
 import {titleForRun} from '../runs/RunUtils';
 import {TimeElapsed} from '../runs/TimeElapsed';
 
-import {InstancePageContext} from './InstancePageContext';
-import {InstanceTabs} from './InstanceTabs';
-import {
-  ConcurrencyKeyDetailsQuery,
-  ConcurrencyKeyDetailsQueryVariables,
-  ConcurrencyLimitFragment,
-  ConcurrencyStepFragment,
-  FreeConcurrencySlotsMutation,
-  FreeConcurrencySlotsMutationVariables,
-  InstanceConcurrencyLimitsQuery,
-  InstanceConcurrencyLimitsQueryVariables,
-  RunsForConcurrencyKeyQuery,
-  RunsForConcurrencyKeyQueryVariables,
-  RunQueueConfigFragment,
-  SetConcurrencyLimitMutation,
-  SetConcurrencyLimitMutationVariables,
-} from './types/InstanceConcurrency.types';
+const DEFAULT_MIN_VALUE = 1;
+const DEFAULT_MAX_VALUE = 1000;
 
 const InstanceConcurrencyPage = React.memo(() => {
   useTrackPageView();
@@ -92,6 +94,8 @@ const InstanceConcurrencyPage = React.memo(() => {
             limits={data.instance.concurrencyLimits}
             hasSupport={data.instance.supportsConcurrencyLimits}
             refetch={queryResult.refetch}
+            minValue={data.instance.minConcurrencyLimitValue}
+            maxValue={data.instance.maxConcurrencyLimitValue}
           />
         </>
       ) : (
@@ -225,11 +229,15 @@ export const ConcurrencyLimits = ({
   hasSupport,
   limits,
   refetch,
+  minValue,
+  maxValue,
 }: {
   limits: ConcurrencyLimitFragment[];
   refetch: () => void;
   instanceConfig?: string | null;
   hasSupport?: boolean;
+  maxValue?: number;
+  minValue?: number;
 }) => {
   const [action, setAction] = React.useState<DialogAction>();
   const [selectedKey, setSelectedKey] = React.useState<string | undefined>(undefined);
@@ -354,6 +362,8 @@ export const ConcurrencyLimits = ({
         open={action?.actionType === 'add'}
         onClose={() => setAction(undefined)}
         onComplete={refetch}
+        minValue={minValue ?? DEFAULT_MIN_VALUE}
+        maxValue={maxValue ?? DEFAULT_MAX_VALUE}
       />
       <DeleteConcurrencyLimitDialog
         concurrencyKey={action && action.actionType === 'delete' ? action.concurrencyKey : ''}
@@ -366,6 +376,8 @@ export const ConcurrencyLimits = ({
         onClose={() => setAction(undefined)}
         onComplete={refetch}
         concurrencyKey={action?.actionType === 'edit' ? action.concurrencyKey : ''}
+        minValue={minValue ?? DEFAULT_MIN_VALUE}
+        maxValue={maxValue ?? DEFAULT_MAX_VALUE}
       />
       <ConcurrencyStepsDialog
         title={
@@ -430,7 +442,11 @@ const ConcurrencyLimitActionMenu = ({
   );
 };
 
-const isValidLimit = (concurrencyLimit?: string) => {
+const isValidLimit = (
+  concurrencyLimit?: string,
+  minLimitValue: number = DEFAULT_MIN_VALUE,
+  maxLimitValue: number = DEFAULT_MAX_VALUE,
+) => {
   if (!concurrencyLimit) {
     return false;
   }
@@ -441,17 +457,21 @@ const isValidLimit = (concurrencyLimit?: string) => {
   if (String(value) !== concurrencyLimit.trim()) {
     return false;
   }
-  return value > 0 && value < 1000;
+  return value >= minLimitValue && value <= maxLimitValue;
 };
 
 const AddConcurrencyLimitDialog = ({
   open,
   onClose,
   onComplete,
+  maxValue,
+  minValue,
 }: {
   open: boolean;
   onClose: () => void;
   onComplete: () => void;
+  maxValue: number;
+  minValue: number;
 }) => {
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [limitInput, setLimitInput] = React.useState('');
@@ -488,12 +508,14 @@ const AddConcurrencyLimitDialog = ({
             placeholder="Concurrency key"
           />
         </Box>
-        <Box margin={{bottom: 4}}>Concurrency limit (1-1000):</Box>
+        <Box margin={{bottom: 4}}>
+          Concurrency limit ({minValue}-{maxValue}):
+        </Box>
         <Box>
           <TextInput
             value={limitInput || ''}
             onChange={(e) => setLimitInput(e.target.value)}
-            placeholder="1 - 1000"
+            placeholder={`${minValue} - ${maxValue}`}
           />
         </Box>
       </DialogBody>
@@ -504,7 +526,9 @@ const AddConcurrencyLimitDialog = ({
         <Button
           intent="primary"
           onClick={save}
-          disabled={!isValidLimit(limitInput.trim()) || !keyInput || isSubmitting}
+          disabled={
+            !isValidLimit(limitInput.trim(), minValue, maxValue) || !keyInput || isSubmitting
+          }
         >
           {isSubmitting ? 'Adding...' : 'Add limit'}
         </Button>
@@ -518,11 +542,15 @@ const EditConcurrencyLimitDialog = ({
   open,
   onClose,
   onComplete,
+  minValue,
+  maxValue,
 }: {
   concurrencyKey: string;
   open: boolean;
   onClose: () => void;
   onComplete: () => void;
+  minValue: number;
+  maxValue: number;
 }) => {
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [limitInput, setLimitInput] = React.useState('');
@@ -559,12 +587,14 @@ const EditConcurrencyLimitDialog = ({
         <Box margin={{bottom: 16}}>
           <strong>{concurrencyKey}</strong>
         </Box>
-        <Box margin={{bottom: 4}}>Concurrency limit (1-1000):</Box>
+        <Box margin={{bottom: 4}}>
+          Concurrency limit ({minValue}-{maxValue}):
+        </Box>
         <Box>
           <TextInput
             value={limitInput || ''}
             onChange={(e) => setLimitInput(e.target.value)}
-            placeholder="1 - 1000"
+            placeholder={`${minValue} - ${maxValue}`}
           />
         </Box>
       </DialogBody>
@@ -577,7 +607,11 @@ const EditConcurrencyLimitDialog = ({
             Updating...
           </Button>
         ) : (
-          <Button intent="primary" onClick={save} disabled={!isValidLimit(limitInput.trim())}>
+          <Button
+            intent="primary"
+            onClick={save}
+            disabled={!isValidLimit(limitInput.trim(), minValue, maxValue)}
+          >
             Update limit
           </Button>
         )}
@@ -599,16 +633,14 @@ const DeleteConcurrencyLimitDialog = ({
 }) => {
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
-  const [setConcurrencyLimit] = useMutation<
-    SetConcurrencyLimitMutation,
-    SetConcurrencyLimitMutationVariables
-  >(SET_CONCURRENCY_LIMIT_MUTATION);
+  const [deleteConcurrencyLimit] = useMutation<
+    DeleteConcurrencyLimitMutation,
+    DeleteConcurrencyLimitMutationVariables
+  >(DELETE_CONCURRENCY_LIMIT_MUTATION);
 
   const save = async () => {
     setIsSubmitting(true);
-    await setConcurrencyLimit({
-      variables: {concurrencyKey, limit: 0},
-    });
+    await deleteConcurrencyLimit({variables: {concurrencyKey}});
     setIsSubmitting(false);
     onComplete();
     onClose();
@@ -809,7 +841,7 @@ const PendingStepsTable = ({
               placement="top"
               content="Priority can be set on each op/asset using the 'dagster/priority' tag. Higher priority steps will be assigned slots first."
             >
-              <Icon name="info" color={colorAccentGray()} />
+              <Icon name="info" color={Colors.accentGray()} />
             </Tooltip>
           </Box>
         </th>
@@ -827,7 +859,7 @@ const PendingStepsTable = ({
             <td colSpan={6}>
               <Box
                 flex={{alignItems: 'center', justifyContent: 'center'}}
-                style={{color: colorTextLight()}}
+                style={{color: Colors.textLight()}}
                 padding={16}
               >
                 There are no active or pending steps for this concurrency key.
@@ -842,7 +874,7 @@ const PendingStepsTable = ({
   return (
     <Table>
       {tableHeader}
-      <tbody style={{backgroundColor: colorBackgroundYellow()}}>
+      <tbody style={{backgroundColor: Colors.backgroundYellow()}}>
         {assignedSteps.map((step) => (
           <PendingStepRow
             key={step.runId + step.stepKey}
@@ -889,7 +921,7 @@ const PendingStepRow = ({
                   placement="top"
                   content="Slots for canceled / failed runs can automatically be freed by configuring a run monitoring setting."
                 >
-                  <Icon name="info" color={colorAccentGray()} />
+                  <Icon name="info" color={Colors.accentGray()} />
                 </Tooltip>
               ) : null}
             </Box>
@@ -963,6 +995,8 @@ export const INSTANCE_CONCURRENCY_LIMITS_QUERY = gql`
       runQueueConfig {
         ...RunQueueConfigFragment
       }
+      minConcurrencyLimitValue
+      maxConcurrencyLimitValue
       concurrencyLimits {
         ...ConcurrencyLimitFragment
       }
@@ -976,6 +1010,12 @@ export const INSTANCE_CONCURRENCY_LIMITS_QUERY = gql`
 const SET_CONCURRENCY_LIMIT_MUTATION = gql`
   mutation SetConcurrencyLimit($concurrencyKey: String!, $limit: Int!) {
     setConcurrencyLimit(concurrencyKey: $concurrencyKey, limit: $limit)
+  }
+`;
+
+const DELETE_CONCURRENCY_LIMIT_MUTATION = gql`
+  mutation DeleteConcurrencyLimit($concurrencyKey: String!) {
+    deleteConcurrencyLimit(concurrencyKey: $concurrencyKey)
   }
 `;
 

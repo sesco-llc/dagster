@@ -1,41 +1,27 @@
 import {gql, useLazyQuery} from '@apollo/client';
 import {
+  Box,
   Button,
+  Colors,
+  Dialog,
+  DialogBody,
+  DialogFooter,
   Icon,
+  JoinedButtons,
+  Menu,
   MenuDivider,
   MenuExternalLink,
   MenuItem,
-  Menu,
   Popover,
   Tooltip,
-  DialogFooter,
-  Dialog,
-  JoinedButtons,
-  DialogBody,
-  Box,
-  StyledRawCodeMirror,
-  colorBackgroundLight,
-  colorTextLight,
 } from '@dagster-io/ui-components';
 import * as React from 'react';
 import {Link} from 'react-router-dom';
 import styled from 'styled-components';
 
-import {AppContext} from '../app/AppContext';
-import {showSharedToaster} from '../app/DomUtils';
-import {DEFAULT_DISABLED_REASON} from '../app/Permissions';
-import {useCopyToClipboard} from '../app/browser';
-import {ReexecutionStrategy} from '../graphql/types';
-import {NO_LAUNCH_PERMISSION_MESSAGE} from '../launchpad/LaunchRootExecutionButton';
-import {getPipelineSnapshotLink} from '../pipelines/PipelinePathUtils';
-import {AnchorButton} from '../ui/AnchorButton';
-import {MenuLink} from '../ui/MenuLink';
-import {isThisThingAJob} from '../workspace/WorkspaceContext';
-import {useRepositoryForRunWithParentSnapshot} from '../workspace/useRepositoryForRun';
-import {workspacePathFromRunDetails} from '../workspace/workspacePath';
-
 import {DeletionDialog} from './DeletionDialog';
 import {ReexecutionDialog} from './ReexecutionDialog';
+import {RunConfigDialog} from './RunConfigDialog';
 import {doneStatuses, failedStatuses} from './RunStatuses';
 import {RunTags} from './RunTags';
 import {RunsQueryRefetchContext} from './RunUtils';
@@ -48,6 +34,17 @@ import {
 import {RunTableRunFragment} from './types/RunTable.types';
 import {useJobAvailabilityErrorForRun} from './useJobAvailabilityErrorForRun';
 import {useJobReexecution} from './useJobReExecution';
+import {AppContext} from '../app/AppContext';
+import {showSharedToaster} from '../app/DomUtils';
+import {DEFAULT_DISABLED_REASON} from '../app/Permissions';
+import {useCopyToClipboard} from '../app/browser';
+import {ReexecutionStrategy} from '../graphql/types';
+import {getPipelineSnapshotLink} from '../pipelines/PipelinePathUtils';
+import {AnchorButton} from '../ui/AnchorButton';
+import {MenuLink} from '../ui/MenuLink';
+import {isThisThingAJob} from '../workspace/WorkspaceContext';
+import {useRepositoryForRunWithParentSnapshot} from '../workspace/useRepositoryForRun';
+import {workspacePipelineLinkForRun} from '../workspace/workspacePath';
 
 interface Props {
   run: RunTableRunFragment;
@@ -64,6 +61,15 @@ export const RunActionsMenu = React.memo(({run, onAddTag, additionalActionsForRu
   const {rootServerURI} = React.useContext(AppContext);
 
   const copyConfig = useCopyToClipboard();
+  const onCopy = async () => {
+    copyConfig(runConfigYaml || '');
+    await showSharedToaster({
+      intent: 'success',
+      icon: 'copy_to_clipboard_done',
+      message: 'Copied!',
+    });
+  };
+
   const reexecute = useJobReexecution({onCompleted: refetch});
 
   const [loadEnv, {called, loading, data}] = useLazyQuery<
@@ -108,6 +114,13 @@ export const RunActionsMenu = React.memo(({run, onAddTag, additionalActionsForRu
     }
     return {disabled: false};
   }, [run.hasReExecutePermission, jobError, infoReady]);
+
+  const jobLink = workspacePipelineLinkForRun({
+    run,
+    repositoryName: repoMatch?.match.repository.name,
+    repositoryLocationName: repoMatch?.match.repositoryLocation.name,
+    isJob,
+  });
 
   return (
     <>
@@ -160,26 +173,16 @@ export const RunActionsMenu = React.memo(({run, onAddTag, additionalActionsForRu
               <MenuDivider />
               <>
                 <Tooltip
-                  content={
-                    run.hasReExecutePermission
-                      ? OPEN_LAUNCHPAD_UNKNOWN
-                      : NO_LAUNCH_PERMISSION_MESSAGE
-                  }
+                  content={jobLink.disabledReason || OPEN_LAUNCHPAD_UNKNOWN}
                   position="left"
-                  disabled={infoReady && run.hasReExecutePermission}
+                  disabled={infoReady && !jobLink.disabledReason}
                   targetTagName="div"
                 >
                   <MenuLink
-                    text="Open in Launchpad..."
-                    disabled={!infoReady || !run.hasReExecutePermission}
-                    icon="edit"
-                    to={workspacePathFromRunDetails({
-                      id: run.id,
-                      pipelineName: run.pipelineName,
-                      repositoryName: repoMatch?.match.repository.name,
-                      repositoryLocationName: repoMatch?.match.repositoryLocation.name,
-                      isJob,
-                    })}
+                    text={jobLink.label}
+                    disabled={!infoReady || !!jobLink.disabledReason}
+                    icon={jobLink.icon}
+                    to={jobLink.to}
                   />
                 </Tooltip>
                 <Tooltip
@@ -273,36 +276,14 @@ export const RunActionsMenu = React.memo(({run, onAddTag, additionalActionsForRu
           </Button>
         </DialogFooter>
       </Dialog>
-      <Dialog
+      <RunConfigDialog
         isOpen={visibleDialog === 'config'}
-        title="Config"
-        canOutsideClickClose
-        canEscapeKeyClose
         onClose={closeDialogs}
-      >
-        <StyledRawCodeMirror
-          value={runConfigYaml || ''}
-          options={{readOnly: true, lineNumbers: true, mode: 'yaml'}}
-        />
-        <DialogFooter topBorder>
-          <Button
-            intent="none"
-            onClick={async () => {
-              copyConfig(runConfigYaml || '');
-              await showSharedToaster({
-                intent: 'success',
-                icon: 'copy_to_clipboard_done',
-                message: 'Copied!',
-              });
-            }}
-          >
-            Copy config
-          </Button>
-          <Button intent="primary" onClick={closeDialogs}>
-            OK
-          </Button>
-        </DialogFooter>
-      </Dialog>
+        copyConfig={onCopy}
+        mode={run.mode}
+        runConfigYaml={runConfigYaml || ''}
+        isJob={isJob}
+      />
     </>
   );
 });
@@ -496,8 +477,8 @@ export const PIPELINE_ENVIRONMENT_QUERY = gql`
 const SlashShortcut = styled.div`
   border-radius: 4px;
   padding: 0px 6px;
-  background: ${colorBackgroundLight()};
-  color: ${colorTextLight()};
+  background: ${Colors.backgroundLight()};
+  color: ${Colors.textLight()};
 `;
 
 const LinkNoUnderline = styled(Link)`

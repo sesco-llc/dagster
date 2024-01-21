@@ -1,12 +1,6 @@
 import {gql, useQuery} from '@apollo/client';
-import {Box, Page, Spinner, colorTextLight} from '@dagster-io/ui-components';
-import * as React from 'react';
+import {Box, Colors, Page, Spinner} from '@dagster-io/ui-components';
 import {useHistory, useParams} from 'react-router-dom';
-
-import {useTrackPageView} from '../app/analytics';
-import {displayNameForAssetKey} from '../asset-graph/Utils';
-import {useDocumentTitle} from '../hooks/useDocumentTitle';
-import {ReloadAllButton} from '../workspace/ReloadAllButton';
 
 import {AssetGlobalLineageLink, AssetPageHeader} from './AssetPageHeader';
 import {AssetView} from './AssetView';
@@ -16,6 +10,11 @@ import {
   AssetsCatalogRootQuery,
   AssetsCatalogRootQueryVariables,
 } from './types/AssetsCatalogRoot.types';
+import {useTrackPageView} from '../app/analytics';
+import {displayNameForAssetKey} from '../asset-graph/Utils';
+import {useDocumentTitle} from '../hooks/useDocumentTitle';
+import {useStartTrace} from '../performance';
+import {ReloadAllButton} from '../workspace/ReloadAllButton';
 
 export const AssetsCatalogRoot = () => {
   useTrackPageView();
@@ -41,6 +40,10 @@ export const AssetsCatalogRoot = () => {
       : 'Assets',
   );
 
+  const trace = useStartTrace(
+    currentPath && currentPath.length === 0 ? 'AssetsCatalogRoot' : 'AssetCatalogAssetView',
+  );
+
   if (queryResult.loading) {
     return (
       <Page>
@@ -48,7 +51,7 @@ export const AssetsCatalogRoot = () => {
         <Box flex={{direction: 'row', justifyContent: 'center'}} style={{paddingTop: '100px'}}>
           <Box flex={{direction: 'row', alignItems: 'center', gap: 16}}>
             <Spinner purpose="body-text" />
-            <div style={{color: colorTextLight()}}>Loading assets…</div>
+            <div style={{color: Colors.textLight()}}>Loading assets…</div>
           </Box>
         </Box>
       </Page>
@@ -73,12 +76,13 @@ export const AssetsCatalogRoot = () => {
         <AssetsCatalogTable
           prefixPath={currentPath}
           setPrefixPath={(prefixPath) => history.push(assetDetailsPathForKey({path: prefixPath}))}
+          trace={trace}
         />
       </Box>
     );
   }
 
-  return <AssetView assetKey={{path: currentPath}} />;
+  return <AssetView assetKey={{path: currentPath}} trace={trace} />;
 };
 
 // Imported via React.lazy, which requires a default export.

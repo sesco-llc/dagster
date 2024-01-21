@@ -7,6 +7,7 @@ from dagster import (
     AssetCheckSeverity,
     AssetExecutionContext,
     AssetKey,
+    ConfigurableResource,
     DagsterEventType,
     DagsterInstance,
     Definitions,
@@ -25,7 +26,11 @@ from dagster._core.errors import DagsterInvalidDefinitionError, DagsterInvariant
 
 
 def execute_assets_and_checks(
-    assets=None, asset_checks=None, raise_on_error: bool = True, resources=None, instance=None
+    assets=None,
+    asset_checks=None,
+    raise_on_error: bool = True,
+    resources=None,
+    instance=None,
 ) -> ExecuteInProcessResult:
     defs = Definitions(assets=assets, asset_checks=asset_checks, resources=resources)
     job_def = defs.get_implicit_global_asset_job_def()
@@ -429,6 +434,69 @@ def test_resource_params():
     execute_assets_and_checks(asset_checks=[check1], resources={"my_resource": MyResource(5)})
 
 
+def test_resource_params_with_resource_defs():
+    class MyResource(NamedTuple):
+        value: int
+
+    @asset_check(asset=AssetKey("asset1"), resource_defs={"my_resource": MyResource(5)})
+    def check1(my_resource: ResourceParam[MyResource]):
+        assert my_resource.value == 5
+        return AssetCheckResult(passed=True)
+
+    execute_assets_and_checks(asset_checks=[check1])
+
+
+def test_required_resource_keys():
+    @asset
+    def my_asset():
+        pass
+
+    @asset_check(asset=my_asset, required_resource_keys={"my_resource"})
+    def my_check(context: AssetExecutionContext):
+        assert context.resources.my_resource == "foobar"
+        return AssetCheckResult(passed=True)
+
+    execute_assets_and_checks(
+        assets=[my_asset], asset_checks=[my_check], resources={"my_resource": "foobar"}
+    )
+
+
+def test_resource_definitions():
+    @asset
+    def my_asset():
+        pass
+
+    class MyResource(ConfigurableResource):
+        name: str
+
+    @asset_check(asset=my_asset, resource_defs={"my_resource": MyResource(name="foobar")})
+    def my_check(context: AssetExecutionContext):
+        assert context.resources.my_resource.name == "foobar"
+        return AssetCheckResult(passed=True)
+
+    execute_assets_and_checks(assets=[my_asset], asset_checks=[my_check])
+
+
+def test_resource_definitions_satisfy_required_keys():
+    @asset
+    def my_asset():
+        pass
+
+    class MyResource(ConfigurableResource):
+        name: str
+
+    @asset_check(
+        asset=my_asset,
+        resource_defs={"my_resource": MyResource(name="foobar")},
+        required_resource_keys={"my_resource"},
+    )
+    def my_check(context: AssetExecutionContext):
+        assert context.resources.my_resource.name == "foobar"
+        return AssetCheckResult(passed=True)
+
+    execute_assets_and_checks(assets=[my_asset], asset_checks=[my_check])
+
+
 def test_job_only_execute_checks_downstream_of_selected_assets():
     @asset
     def asset1():
@@ -500,8 +568,9 @@ def test_multiple_managed_inputs():
     with pytest.raises(
         DagsterInvalidDefinitionError,
         match=re.escape(
-            "When defining check 'check1', multiple target assets provided as parameters:"
-            " ['asset1', 'asset2']. Only one is allowed."
+            "When defining check 'check1', multiple assets provided as parameters:"
+            " ['asset1', 'asset2']. These should either match the target asset or be specified "
+            "in 'additional_ins'."
         ),
     ):
 

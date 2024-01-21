@@ -1,4 +1,4 @@
-import {CoreColors, colorShadowDefault} from '@dagster-io/ui-components';
+import {Colors} from '@dagster-io/ui-components';
 import * as React from 'react';
 import ReactDOM from 'react-dom';
 import styled from 'styled-components';
@@ -26,7 +26,7 @@ const SHORTCUT_VISIBLITY_DELAY = 800;
 // implemented inside a React component.
 //
 let shortcutsVisible = false;
-let shortcutsTimer: NodeJS.Timeout | null = null;
+let shortcutsTimer: ReturnType<typeof setTimeout> | null = null;
 
 function getShortcutsVisible() {
   return shortcutsVisible;
@@ -205,9 +205,9 @@ const ShortcutAnnotation = styled.div`
   padding: 2px;
   z-index: 20;
   transform: translate(-90%, -10px);
-  color: ${CoreColors.Gray100};
-  background: ${CoreColors.Gray800};
-  border: 1px solid ${CoreColors.Gray300};
+  color: ${Colors.tooltipText()};
+  background: ${Colors.tooltipBackground()};
+  border: 1px solid ${Colors.borderHover()};
   border-radius: 3px;
-  box-shadow: 0 1px 3px ${colorShadowDefault()};
+  box-shadow: 0 1px 3px ${Colors.shadowDefault()};
 `;

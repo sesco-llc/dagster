@@ -1,6 +1,5 @@
 import {render, screen, waitFor} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import * as React from 'react';
 
 import {InstigationTickStatus} from '../../graphql/types';
 import {TickStatusTag} from '../../ticks/TickStatusTag';
@@ -24,7 +23,7 @@ describe('TickTag', () => {
 
       render(<TickStatusTag tick={skippedTick} />);
 
-      const tag = screen.queryByText(/0 requested/i);
+      const tag = screen.queryByText(/0 runs requested/i);
       expect(tag).toBeVisible();
 
       await userEvent.hover(tag as HTMLElement);
@@ -38,7 +37,7 @@ describe('TickTag', () => {
 
       render(<TickStatusTag tick={skippedTick} />);
 
-      const tag = screen.queryByText(/0 requested/i);
+      const tag = screen.queryByText(/0 runs requested/i);
       expect(tag).toBeVisible();
 
       await userEvent.hover(tag as HTMLElement);

@@ -1,5 +1,4 @@
-import {ButtonGroup, Box, CursorHistoryControls} from '@dagster-io/ui-components';
-import React from 'react';
+import {Box, ButtonGroup, CursorHistoryControls} from '@dagster-io/ui-components';
 import styled from 'styled-components';
 
 import {useQueryRefreshAtInterval} from '../../app/QueryRefresh';
@@ -11,8 +10,10 @@ import {useCursorPaginatedQuery} from '../../runs/useCursorPaginatedQuery';
 const PAGE_SIZE = 15;
 
 export const AutomaterializeRunHistoryTable = ({
+  filterTags,
   setTableView,
 }: {
+  filterTags?: {key: string; value: string}[];
   setTableView: (view: 'evaluations' | 'runs') => void;
 }) => {
   const {queryResult, paginationProps} = useCursorPaginatedQuery<
@@ -33,7 +34,7 @@ export const AutomaterializeRunHistoryTable = ({
     },
     variables: {
       filter: {
-        tags: [{key: 'dagster/auto_materialize', value: 'true'}],
+        tags: [...(filterTags || []), {key: 'dagster/auto_materialize', value: 'true'}],
       },
     },
     query: RUNS_ROOT_QUERY,

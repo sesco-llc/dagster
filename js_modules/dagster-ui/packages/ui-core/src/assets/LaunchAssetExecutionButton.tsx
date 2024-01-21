@@ -11,26 +11,7 @@ import {
 } from '@dagster-io/ui-components';
 import pick from 'lodash/pick';
 import uniq from 'lodash/uniq';
-import React from 'react';
-
-import {showCustomAlert} from '../app/CustomAlertProvider';
-import {useConfirmation} from '../app/CustomConfirmationProvider';
-import {IExecutionSession} from '../app/ExecutionSessionStorage';
-import {
-  displayNameForAssetKey,
-  isHiddenAssetGroupJob,
-  sortAssetKeys,
-  tokenForAssetKey,
-} from '../asset-graph/Utils';
-import {PipelineSelector} from '../graphql/types';
-import {useLaunchPadHooks} from '../launchpad/LaunchpadHooksContext';
-import {AssetLaunchpad} from '../launchpad/LaunchpadRoot';
-import {LaunchPipelineExecutionMutationVariables} from '../runs/types/RunUtils.types';
-import {testId} from '../testing/testId';
-import {CONFIG_TYPE_SCHEMA_FRAGMENT} from '../typeexplorer/ConfigTypeSchema';
-import {buildRepoAddress} from '../workspace/buildRepoAddress';
-import {repoAddressAsHumanString} from '../workspace/repoAddressAsString';
-import {RepoAddress} from '../workspace/types';
+import * as React from 'react';
 
 import {ASSET_NODE_CONFIG_FRAGMENT} from './AssetConfig';
 import {MULTIPLE_DEFINITIONS_WARNING} from './AssetDefinedInMultipleReposNotice';
@@ -50,6 +31,24 @@ import {
   LaunchAssetLoaderResourceQuery,
   LaunchAssetLoaderResourceQueryVariables,
 } from './types/LaunchAssetExecutionButton.types';
+import {showCustomAlert} from '../app/CustomAlertProvider';
+import {useConfirmation} from '../app/CustomConfirmationProvider';
+import {IExecutionSession} from '../app/ExecutionSessionStorage';
+import {
+  displayNameForAssetKey,
+  isHiddenAssetGroupJob,
+  sortAssetKeys,
+  tokenForAssetKey,
+} from '../asset-graph/Utils';
+import {PipelineSelector} from '../graphql/types';
+import {useLaunchPadHooks} from '../launchpad/LaunchpadHooksContext';
+import {AssetLaunchpad} from '../launchpad/LaunchpadRoot';
+import {LaunchPipelineExecutionMutationVariables} from '../runs/types/RunUtils.types';
+import {testId} from '../testing/testId';
+import {CONFIG_TYPE_SCHEMA_FRAGMENT} from '../typeexplorer/ConfigTypeSchema';
+import {buildRepoAddress} from '../workspace/buildRepoAddress';
+import {repoAddressAsHumanString} from '../workspace/repoAddressAsString';
+import {RepoAddress} from '../workspace/types';
 
 export type LaunchAssetsChoosePartitionsTarget =
   | {type: 'job'; jobName: string; partitionSetName: string}
@@ -163,9 +162,10 @@ export const LaunchAssetExecutionButton = ({
   preferredJobName,
   additionalDropdownOptions,
   intent = 'primary',
-  showChangedAndMissingOption,
+  showChangedAndMissingOption = true,
 }: {
   scope: AssetsInScope;
+  showChangedAndMissingOption?: boolean;
   intent?: 'primary' | 'none';
   preferredJobName?: string;
   additionalDropdownOptions?: {
@@ -173,7 +173,6 @@ export const LaunchAssetExecutionButton = ({
     icon?: JSX.Element;
     onClick: () => void;
   }[];
-  showChangedAndMissingOption?: boolean;
 }) => {
   const {onClick, loading, launchpadElement} = useMaterializationAction(preferredJobName);
   const [isOpen, setIsOpen] = React.useState(false);
@@ -256,7 +255,7 @@ export const LaunchAssetExecutionButton = ({
                   onClick={(e) => onClick(option.assetKeys, e)}
                 />
               ))}
-              {showChangedAndMissingOption && 'all' in scope ? (
+              {showChangedAndMissingOption ? (
                 <MenuItem
                   text="Materialize changed and missing"
                   icon="changes_present"

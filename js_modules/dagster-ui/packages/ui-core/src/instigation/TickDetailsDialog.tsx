@@ -1,20 +1,26 @@
 import {gql, useQuery} from '@apollo/client';
 import 'chartjs-adapter-date-fns';
 import {
-  Button,
-  DialogFooter,
-  Dialog,
   Box,
-  Subtitle2,
-  Table,
-  Spinner,
-  DialogHeader,
+  Button,
   ButtonLink,
-  Tag,
+  Dialog,
+  DialogFooter,
+  DialogHeader,
   MiddleTruncate,
+  Spinner,
+  Subtitle2,
+  Tab,
+  Table,
+  Tabs,
+  Tag,
 } from '@dagster-io/ui-components';
-import * as React from 'react';
+import {useMemo, useState} from 'react';
 
+import {FailedRunList, RunList} from './InstigationTick';
+import {HISTORY_TICK_FRAGMENT} from './InstigationUtils';
+import {HistoryTickFragment} from './types/InstigationUtils.types';
+import {SelectedTickQuery, SelectedTickQueryVariables} from './types/TickDetailsDialog.types';
 import {showCustomAlert} from '../app/CustomAlertProvider';
 import {PYTHON_ERROR_FRAGMENT} from '../app/PythonErrorFragment';
 import {PythonErrorInfo} from '../app/PythonErrorInfo';
@@ -28,11 +34,7 @@ import {
   InstigationTickStatus,
 } from '../graphql/types';
 import {TimestampDisplay} from '../schedules/TimestampDisplay';
-
-import {FailedRunList, RunList} from './InstigationTick';
-import {HISTORY_TICK_FRAGMENT} from './InstigationUtils';
-import {HistoryTickFragment} from './types/InstigationUtils.types';
-import {SelectedTickQuery, SelectedTickQueryVariables} from './types/TickDetailsDialog.types';
+import {QueryfulTickLogsTable} from '../ticks/TickLogDialog';
 
 interface DialogProps extends InnerProps {
   onClose: () => void;
@@ -41,11 +43,19 @@ interface DialogProps extends InnerProps {
 
 export const TickDetailsDialog = ({tickId, isOpen, instigationSelector, onClose}: DialogProps) => {
   return (
-    <Dialog isOpen={isOpen} onClose={onClose} style={{width: '90vw'}}>
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      style={{width: '80vw', maxWidth: '1200px', minWidth: '600px'}}
+    >
       <TickDetailsDialogImpl tickId={tickId} instigationSelector={instigationSelector} />
-      <DialogFooter>
-        <Button onClick={onClose}>Close</Button>
-      </DialogFooter>
+      {/* The logs table uses z-index for the column lines. Create a new stacking index
+      for the footer so that the lines don't sit above it. */}
+      <div style={{zIndex: 1}}>
+        <DialogFooter topBorder>
+          <Button onClick={onClose}>Close</Button>
+        </DialogFooter>
+      </div>
     </Dialog>
   );
 };
@@ -56,6 +66,8 @@ interface InnerProps {
 }
 
 const TickDetailsDialogImpl = ({tickId, instigationSelector}: InnerProps) => {
+  const [activeTab, setActiveTab] = useState<'result' | 'logs'>('result');
+
   const {data} = useQuery<SelectedTickQuery, SelectedTickQueryVariables>(JOB_SELECTED_TICK_QUERY, {
     variables: {instigationSelector, tickId: tickId || 0},
     skip: !tickId,
@@ -66,7 +78,7 @@ const TickDetailsDialogImpl = ({tickId, instigationSelector}: InnerProps) => {
       ? data?.instigationStateOrError.tick
       : undefined;
 
-  const [addedPartitions, deletedPartitions] = React.useMemo(() => {
+  const [addedPartitionRequests, deletedPartitionRequests] = useMemo(() => {
     const added = tick?.dynamicPartitionsRequestResults.filter(
       (request) =>
         request.type === DynamicPartitionsRequestType.ADD_PARTITIONS &&
@@ -101,40 +113,63 @@ const TickDetailsDialogImpl = ({tickId, instigationSelector}: InnerProps) => {
       <Box padding={{vertical: 12, horizontal: 24}} border="bottom">
         <TickDetailSummary tick={tick} />
       </Box>
-      {tick.runIds.length || tick.originRunIds.length ? (
-        <>
-          <Box padding={{vertical: 12, horizontal: 24}} border="bottom">
-            <Subtitle2>Runs requested</Subtitle2>
-          </Box>
-          {tick.runIds.length ? (
-            <RunList runIds={tick.runIds} />
-          ) : (
-            <FailedRunList originRunIds={tick.originRunIds} />
-          )}
-        </>
+      <Box padding={{horizontal: 24}} border="bottom">
+        <Tabs selectedTabId={activeTab} onChange={setActiveTab}>
+          <Tab id="result" title="Result" />
+          <Tab id="logs" title="Logs" />
+        </Tabs>
+      </Box>
+      {activeTab === 'result' ? (
+        <div style={{height: '500px', overflowY: 'auto'}}>
+          {tick.runIds.length || tick.originRunIds.length ? (
+            <>
+              <Box padding={{vertical: 12, horizontal: 24}} border="bottom">
+                <Subtitle2>Requested</Subtitle2>
+              </Box>
+              {tick.runIds.length ? (
+                <RunList runIds={tick.runIds} />
+              ) : (
+                <FailedRunList originRunIds={tick.originRunIds} />
+              )}
+            </>
+          ) : null}
+          {addedPartitionRequests?.length ? (
+            <>
+              <Box padding={{vertical: 12, horizontal: 24}} border="bottom">
+                <Subtitle2>Added partitions</Subtitle2>
+              </Box>
+              <PartitionsTable partitions={addedPartitionRequests} />
+            </>
+          ) : null}
+          {deletedPartitionRequests?.length ? (
+            <>
+              <Box padding={{vertical: 12, horizontal: 24}} border="bottom">
+                <Subtitle2>Deleted partitions</Subtitle2>
+              </Box>
+              <PartitionsTable partitions={deletedPartitionRequests} />
+            </>
+          ) : null}
+          {tick.error ? (
+            <Box padding={24}>
+              <PythonErrorInfo error={tick.error} />
+            </Box>
+          ) : null}
+          {tick.skipReason ? (
+            <Box padding={24}>
+              <strong>Skip reason:</strong> {tick.skipReason}
+            </Box>
+          ) : null}
+        </div>
       ) : null}
-      {addedPartitions?.length ? (
-        <>
-          <Box padding={{vertical: 12, horizontal: 24}} border="bottom">
-            <Subtitle2>Added partitions</Subtitle2>
-          </Box>
-          <PartitionsTable partitions={addedPartitions} />
-        </>
-      ) : null}
-      {deletedPartitions?.length ? (
-        <>
-          <Box padding={{vertical: 12, horizontal: 24}} border="bottom">
-            <Subtitle2>Deleted partitions</Subtitle2>
-          </Box>
-          <PartitionsTable partitions={deletedPartitions} />
-        </>
+      {activeTab === 'logs' ? (
+        <QueryfulTickLogsTable instigationSelector={instigationSelector} tick={tick} />
       ) : null}
     </>
   );
 };
 
 export function TickDetailSummary({tick}: {tick: HistoryTickFragment | AssetDaemonTickFragment}) {
-  const intent = React.useMemo(() => {
+  const intent = useMemo(() => {
     switch (tick?.status) {
       case InstigationTickStatus.FAILURE:
         return 'danger';

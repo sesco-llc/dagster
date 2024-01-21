@@ -23,7 +23,9 @@ const GlobalStyle = createGlobalStyle`
   }
 
   html, body {
-    color: ${Colors.Gray800};
+    color-scheme: ${Colors.browserColorScheme()};
+    background-color: ${Colors.backgroundDefault()};
+    color: ${Colors.textDefault()};
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -31,7 +33,7 @@ const GlobalStyle = createGlobalStyle`
   a,
   a:hover,
   a:active {
-    color: ${Colors.Link};
+    color: ${Colors.linkDefault()};
   }
 
   body {
@@ -40,6 +42,8 @@ const GlobalStyle = createGlobalStyle`
   }
 
   body, input, select, textarea {
+    background-color: ${Colors.backgroundDefault()};
+    color: ${Colors.textDefault()};
     font-family: ${FontFamily.default};
   }
 
